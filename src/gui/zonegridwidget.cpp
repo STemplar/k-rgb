@@ -5,7 +5,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 
-#include <cmath>
+#include <algorithm>
 
 namespace {
 constexpr double kMargin = 6.0;
@@ -13,24 +13,49 @@ constexpr double kInset  = 2.0;
 const QColor     kUnset(45, 45, 48);
 const QColor     kBackground(28, 28, 30);
 const QColor     kSelect(80, 170, 255);
+
+int clampi(int v, int lo, int hi) { return std::max(lo, std::min(hi, v)); }
 }  // namespace
 
 ZoneGridWidget::ZoneGridWidget(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(80);
+    setMinimumHeight(120);
     setFocusPolicy(Qt::ClickFocus);
 }
 
-int ZoneGridWidget::rows() const {
-    if(zoneCount_ <= 0 || cols_ <= 0) {
-        return 0;
+double ZoneGridWidget::cellSize() const {
+    return (width() - 2 * kMargin) / static_cast<double>(kCols);
+}
+
+QPoint ZoneGridWidget::posOf(int zone) const {
+    return pos_.value(zone, QPoint(zone % 16, zone / 16));  // default: 16-wide grid
+}
+
+QRectF ZoneGridWidget::rectOf(int zone) const {
+    const double cell = cellSize();
+    const QPoint g = posOf(zone);
+    return QRectF(kMargin + g.x() * cell + kInset / 2.0,
+                  kMargin + g.y() * cell + kInset / 2.0,
+                  cell - kInset, cell - kInset);
+}
+
+QPoint ZoneGridWidget::gridAt(const QPointF& p) const {
+    const double cell = cellSize();
+    const int col = clampi(static_cast<int>((p.x() - kMargin) / cell), 0, kCols - 1);
+    const int row = clampi(static_cast<int>((p.y() - kMargin) / cell), 0, kMaxRows - 1);
+    return QPoint(col, row);
+}
+
+int ZoneGridWidget::zoneAt(const QPointF& p) const {
+    for(int z = 0; z < zoneCount_; ++z) {
+        if(rectOf(z).contains(p)) {
+            return z;
+        }
     }
-    return (zoneCount_ + cols_ - 1) / cols_;
+    return -1;
 }
 
 void ZoneGridWidget::setZoneCount(int n) {
     zoneCount_ = qMax(0, n);
-    cols_ = qBound(1, zoneCount_ > 0 ? qMin(16, zoneCount_) : 1, 16);
-    // Drop selections/colours for zones that no longer exist.
     QSet<int> keep;
     for(int z : selected_) {
         if(z < zoneCount_) {
@@ -38,24 +63,16 @@ void ZoneGridWidget::setZoneCount(int n) {
         }
     }
     selected_ = keep;
-    updateGeometry();
     update();
-}
-
-QSize ZoneGridWidget::sizeHint() const {
-    return QSize(480, qMax(80, heightForWidth(480)));
-}
-
-int ZoneGridWidget::heightForWidth(int w) const {
-    if(zoneCount_ <= 0) {
-        return 80;
-    }
-    const double cell = (w - 2 * kMargin) / cols_;
-    return static_cast<int>(cell * rows() + 2 * kMargin);
 }
 
 void ZoneGridWidget::setZoneColors(const QHash<int, QColor>& colors) {
     colors_ = colors;
+    update();
+}
+
+void ZoneGridWidget::setPositions(const QHash<int, QPoint>& positions) {
+    pos_ = positions;
     update();
 }
 
@@ -65,38 +82,13 @@ QList<int> ZoneGridWidget::selectedZones() const {
     return list;
 }
 
-void ZoneGridWidget::recomputeLayout() {
-    cells_.clear();
-    if(zoneCount_ <= 0) {
-        return;
-    }
-    cells_.reserve(zoneCount_);
-    const double availW = width() - 2 * kMargin;
-    const double availH = height() - 2 * kMargin;
-    const double cell = qMin(availW / cols_, availH / qMax(1, rows()));
-    const double originX = (width() - cell * cols_) / 2.0;
-    const double originY = kMargin;
-    for(int z = 0; z < zoneCount_; ++z) {
-        const int r = z / cols_;
-        const int c = z % cols_;
-        cells_.push_back(QRectF(originX + c * cell + kInset / 2.0,
-                                originY + r * cell + kInset / 2.0,
-                                cell - kInset, cell - kInset));
-    }
-}
-
-int ZoneGridWidget::zoneAt(const QPointF& p) const {
-    for(int z = 0; z < cells_.size(); ++z) {
-        if(cells_[z].contains(p)) {
-            return z;
-        }
-    }
-    return -1;
+void ZoneGridWidget::setArrangeMode(bool on) {
+    arrangeMode_ = on;
+    setCursor(on ? Qt::OpenHandCursor : Qt::ArrowCursor);
+    update();
 }
 
 void ZoneGridWidget::paintEvent(QPaintEvent*) {
-    recomputeLayout();
-
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.fillRect(rect(), kBackground);
@@ -105,16 +97,23 @@ void ZoneGridWidget::paintEvent(QPaintEvent*) {
     font.setPointSizeF(qMax(6.0, font.pointSizeF() - 1.5));
     painter.setFont(font);
 
-    for(int z = 0; z < cells_.size(); ++z) {
+    for(int z = 0; z < zoneCount_; ++z) {
+        const QRectF r = rectOf(z);
         const QColor fill = colors_.value(z, kUnset);
         const bool sel = selected_.contains(z);
         painter.setBrush(fill);
         painter.setPen(QPen(sel ? kSelect : QColor(0, 0, 0, 160), sel ? 2.0 : 1.0));
-        painter.drawRoundedRect(cells_[z], 3.0, 3.0);
+        painter.drawRoundedRect(r, 3.0, 3.0);
 
         const double lum = 0.299 * fill.red() + 0.587 * fill.green() + 0.114 * fill.blue();
         painter.setPen(lum > 140 ? QColor(20, 20, 20) : QColor(220, 220, 220));
-        painter.drawText(cells_[z], Qt::AlignCenter, QString::number(z));
+        painter.drawText(r, Qt::AlignCenter, QString::number(z));
+    }
+
+    if(!rubber_.isNull()) {
+        painter.setPen(QPen(kSelect, 1.0, Qt::DashLine));
+        painter.setBrush(QColor(80, 170, 255, 40));
+        painter.drawRect(rubber_);
     }
 }
 
@@ -122,12 +121,35 @@ void ZoneGridWidget::mousePressEvent(QMouseEvent* ev) {
     if(ev->button() != Qt::LeftButton) {
         return;
     }
-    const bool additive = ev->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
     pressPos_ = ev->position();
     dragging_ = true;
     moved_    = false;
-
     const int hit = zoneAt(pressPos_);
+
+    if(arrangeMode_) {
+        if(hit < 0) {
+            selected_.clear();
+            update();
+            Q_EMIT selectionChanged(0);
+            dragging_ = false;
+            return;
+        }
+        if(!selected_.contains(hit)) {
+            selected_ = {hit};
+            Q_EMIT selectionChanged(1);
+        }
+        setCursor(Qt::ClosedHandCursor);
+        pressGrid_ = gridAt(pressPos_);
+        dragOrigin_.clear();
+        for(int z : selected_) {
+            dragOrigin_.insert(z, posOf(z));
+        }
+        update();
+        return;
+    }
+
+    // Paint mode: select.
+    const bool additive = ev->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
     if(!additive) {
         selected_.clear();
         if(hit >= 0) {
@@ -153,11 +175,24 @@ void ZoneGridWidget::mouseMoveEvent(QMouseEvent* ev) {
     if(!moved_ && (p - pressPos_).manhattanLength() < 4) {
         return;
     }
-    moved_  = true;
+    moved_ = true;
+
+    if(arrangeMode_) {
+        const QPoint delta = gridAt(p) - pressGrid_;
+        for(auto it = dragOrigin_.cbegin(); it != dragOrigin_.cend(); ++it) {
+            const QPoint np(clampi(it.value().x() + delta.x(), 0, kCols - 1),
+                            clampi(it.value().y() + delta.y(), 0, kMaxRows - 1));
+            pos_.insert(it.key(), np);
+        }
+        update();
+        return;
+    }
+
+    // Paint mode: rubber-band select.
     rubber_ = QRectF(pressPos_, p).normalized();
     selected_ = baseSelection_;
-    for(int z = 0; z < cells_.size(); ++z) {
-        if(rubber_.intersects(cells_[z])) {
+    for(int z = 0; z < zoneCount_; ++z) {
+        if(rubber_.intersects(rectOf(z))) {
             selected_.insert(z);
         }
     }
@@ -171,6 +206,12 @@ void ZoneGridWidget::mouseReleaseEvent(QMouseEvent* ev) {
     }
     dragging_ = false;
     rubber_   = QRectF();
+    if(arrangeMode_) {
+        setCursor(Qt::OpenHandCursor);
+        if(moved_) {
+            Q_EMIT layoutChanged();
+        }
+    }
     update();
 }
 
@@ -190,7 +231,7 @@ void ZoneGridWidget::clearSelection() {
         return;
     }
     for(int z : selected_) {
-        colors_.remove(z);  // unassigned == off
+        colors_.remove(z);
     }
     update();
     Q_EMIT changed();

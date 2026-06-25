@@ -9,11 +9,11 @@ class QActionGroup;
 class QCheckBox;
 class QCloseEvent;
 class QComboBox;
-class QGroupBox;
 class QLabel;
 class QMenu;
 class QPushButton;
 class QSlider;
+class QTabWidget;
 class QWidget;
 class KColorButton;
 class KStatusNotifierItem;
@@ -57,7 +57,6 @@ private Q_SLOTS:
     void onCaseApply();
     void onCaseOff();
     void onCaseAvailabilityChanged(bool available);
-    void onCasePerZoneToggle();
     void onCaseZoneApply();
     void onCaseZoneIdentify();
 
@@ -74,6 +73,10 @@ private:
     };
 
     void             buildUi();
+    QWidget*         buildKeyboardPage();
+    QWidget*         buildCasePage();
+    void             saveZoneLayout();
+    void             loadZoneLayout();
     void             setupTray();
     void             populateModes();
     void             loadProfileIntoUi(const LightingSettings& s);
@@ -111,12 +114,12 @@ private:
     KeyboardWidget* keyboardWidget_ = nullptr;
     QLabel*         selectionLabel_ = nullptr;
 
-    QGroupBox*      casePanel_          = nullptr;
+    QTabWidget*     tabs_               = nullptr;
+    QWidget*        casePage_           = nullptr;
     KColorButton*   caseColorButton_    = nullptr;
     QPushButton*    caseApplyButton_    = nullptr;
     QPushButton*    caseOffButton_      = nullptr;
-    QPushButton*    casePerZoneButton_  = nullptr;
-    QWidget*        caseZonePanel_      = nullptr;
+    QCheckBox*      caseArrangeCheck_   = nullptr;
     ZoneGridWidget* zoneGrid_           = nullptr;
     QLabel*         zoneSelectionLabel_ = nullptr;
     bool            casePerZone_        = false;

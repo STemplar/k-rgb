@@ -17,7 +17,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
@@ -29,12 +28,15 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QSystemTrayIcon>
+#include <QTabWidget>
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <QWidget>
 
 #include <KColorButton>
+#include <KConfigGroup>
 #include <KLocalizedString>
+#include <KSharedConfig>
 #include <KStatusNotifierItem>
 
 using krgb::Mode;
@@ -135,7 +137,7 @@ void MainWindow::buildUi() {
     auto* central = new QWidget(this);
     auto* outer = new QVBoxLayout(central);
 
-    // --- Profile bar -------------------------------------------------------
+    // --- Profile bar (shared across tabs) ----------------------------------
     auto* profileRow = new QHBoxLayout();
     profileRow->addWidget(new QLabel(i18n("Profile:"), central));
     profileCombo_ = new QComboBox(central);
@@ -152,18 +154,55 @@ void MainWindow::buildUi() {
     profileRow->addWidget(deleteProfileBtn_);
     outer->addLayout(profileRow);
 
-    // --- Lighting form -----------------------------------------------------
+    // --- Tabs --------------------------------------------------------------
+    tabs_ = new QTabWidget(central);
+    tabs_->addTab(buildKeyboardPage(), QIcon::fromTheme(QStringLiteral("input-keyboard")), i18n("Keyboard"));
+    casePage_ = buildCasePage();  // added to the tab bar only when a controller is present
+    outer->addWidget(tabs_, 1);
+
+    // --- Login options (shared) --------------------------------------------
+    autostartCheck_ = new QCheckBox(i18n("Restore lighting at login"), central);
+    autostartCheck_->setChecked(QFile::exists(autostartFilePath()));
+    autostartCheck_->setToolTip(i18n("Re-apply the active profile's lighting when you log in."));
+    outer->addWidget(autostartCheck_);
+
+    trayAutostartCheck_ = new QCheckBox(i18n("Start k-rgb in the system tray at login"), central);
+    trayAutostartCheck_->setChecked(QFile::exists(trayAutostartFilePath()));
+    trayAutostartCheck_->setToolTip(
+        i18n("Launch k-rgb (hidden, to the system tray) when you log in, so the "
+             "tray quick-switcher is always available."));
+    outer->addWidget(trayAutostartCheck_);
+
+    setCentralWidget(central);
+
+    statusLabel_ = new QLabel(this);
+    statusLabel_->setTextFormat(Qt::RichText);
+    statusBar()->addPermanentWidget(statusLabel_);
+
+    // --- Shared connections ------------------------------------------------
+    connect(autostartCheck_, &QCheckBox::toggled, this, &MainWindow::onAutostartToggled);
+    connect(trayAutostartCheck_, &QCheckBox::toggled, this, &MainWindow::onTrayAutostartToggled);
+    connect(profileCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onProfileSelected);
+    connect(newProfileBtn_, &QPushButton::clicked, this, &MainWindow::onNewProfile);
+    connect(renameProfileBtn_, &QPushButton::clicked, this, &MainWindow::onRenameProfile);
+    connect(deleteProfileBtn_, &QPushButton::clicked, this, &MainWindow::onDeleteProfile);
+}
+
+QWidget* MainWindow::buildKeyboardPage() {
+    auto* page = new QWidget(this);
+    auto* v = new QVBoxLayout(page);
+
     auto* form = new QFormLayout();
     form->setLabelAlignment(Qt::AlignRight);
 
-    modeCombo_ = new QComboBox(central);
+    modeCombo_ = new QComboBox(page);
     for(const ModeEntry& m : modes_) {
         modeCombo_->addItem(m.name);
     }
     auto* modeRow = new QHBoxLayout();
     modeRow->addWidget(modeCombo_, 1);
     auto* perKeyButton = new QPushButton(QIcon::fromTheme(QStringLiteral("input-keyboard")),
-                                         i18n("Per-Key Editor…"), central);
+                                         i18n("Per-Key Editor…"), page);
     perKeyButton->setToolTip(i18n("Paint individual keys — includes USA and Ukraine flag presets."));
     modeRow->addWidget(perKeyButton);
     form->addRow(i18n("Mode:"), modeRow);
@@ -173,17 +212,17 @@ void MainWindow::buildUi() {
         }
     });
 
-    colorButton_ = new KColorButton(QColor(0, 170, 255), central);
+    colorButton_ = new KColorButton(QColor(0, 170, 255), page);
     form->addRow(i18n("Colour:"), colorButton_);
 
-    speedCombo_ = new QComboBox(central);
+    speedCombo_ = new QComboBox(page);
     speedCombo_->addItem(i18n("Slow"),   static_cast<int>(Speed::Slowest));
     speedCombo_->addItem(i18n("Normal"), static_cast<int>(Speed::Normal));
     speedCombo_->addItem(i18n("Fast"),   static_cast<int>(Speed::Fastest));
     speedCombo_->setCurrentIndex(1);
     form->addRow(i18n("Speed:"), speedCombo_);
 
-    directionCombo_ = new QComboBox(central);
+    directionCombo_ = new QComboBox(page);
     directionCombo_->addItem(i18n("Left"),  static_cast<int>(Direction::Left));
     directionCombo_->addItem(i18n("Right"), static_cast<int>(Direction::Right));
     directionCombo_->addItem(i18n("Up"),    static_cast<int>(Direction::Up));
@@ -191,19 +230,19 @@ void MainWindow::buildUi() {
     form->addRow(i18n("Direction:"), directionCombo_);
 
     auto* brightnessRow = new QHBoxLayout();
-    brightnessSlider_ = new QSlider(Qt::Horizontal, central);
+    brightnessSlider_ = new QSlider(Qt::Horizontal, page);
     brightnessSlider_->setRange(0, 100);
     brightnessSlider_->setValue(100);
-    brightnessValue_ = new QLabel(QStringLiteral("100%"), central);
+    brightnessValue_ = new QLabel(QStringLiteral("100%"), page);
     brightnessValue_->setMinimumWidth(40);
     brightnessRow->addWidget(brightnessSlider_);
     brightnessRow->addWidget(brightnessValue_);
     form->addRow(i18n("Brightness:"), brightnessRow);
 
-    outer->addLayout(form);
+    v->addLayout(form);
 
-    // --- Per-key editor (shown only in Per-key mode) -----------------------
-    perKeyPanel_ = new QWidget(central);
+    // Per-key editor (shown only in Per-key mode).
+    perKeyPanel_ = new QWidget(page);
     auto* pkLayout = new QVBoxLayout(perKeyPanel_);
     pkLayout->setContentsMargins(0, 0, 0, 0);
 
@@ -235,7 +274,7 @@ void MainWindow::buildUi() {
 
     connect(usaBtn, &QPushButton::clicked, this, [this] {
         keyboardWidget_->setKeyColors(makeUsaFlag());
-        onPerKeyChanged();  // apply live + save to the active profile
+        onPerKeyChanged();
     });
     connect(ukrBtn, &QPushButton::clicked, this, [this] {
         keyboardWidget_->setKeyColors(makeUkraineFlag());
@@ -251,126 +290,24 @@ void MainWindow::buildUi() {
     pkLayout->addWidget(hint);
 
     perKeyPanel_->setVisible(false);
-    outer->addWidget(perKeyPanel_, 1);
-
-    // --- Case / chassis lighting (shown only when a controller is present) --
-    casePanel_ = new QGroupBox(i18n("Case lighting"), central);
-    auto* casePanelLayout = new QVBoxLayout(casePanel_);
-
-    auto* caseRow = new QHBoxLayout();
-    caseRow->addWidget(new QLabel(i18n("Colour:"), casePanel_));
-    caseColorButton_ = new KColorButton(QColor(0, 90, 255), casePanel_);
-    caseRow->addWidget(caseColorButton_);
-    caseRow->addStretch();
-    casePerZoneButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("color-management")),
-                                         i18n("Per-Zone…"), casePanel_);
-    caseOffButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("system-shutdown")),
-                                     i18n("Off"), casePanel_);
-    caseApplyButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
-                                       i18n("Apply to Case"), casePanel_);
-    caseRow->addWidget(casePerZoneButton_);
-    caseRow->addWidget(caseOffButton_);
-    caseRow->addWidget(caseApplyButton_);
-    casePanelLayout->addLayout(caseRow);
-
-    // Per-zone editor (hidden until "Per-Zone…").
-    caseZonePanel_ = new QWidget(casePanel_);
-    auto* zoneLayout = new QVBoxLayout(caseZonePanel_);
-    zoneLayout->setContentsMargins(0, 0, 0, 0);
-    zoneGrid_ = new ZoneGridWidget(caseZonePanel_);
-    zoneLayout->addWidget(zoneGrid_, 1);
-
-    auto* zoneControls = new QHBoxLayout();
-    zoneSelectionLabel_ = new QLabel(i18n("No zones selected"), caseZonePanel_);
-    zoneControls->addWidget(zoneSelectionLabel_);
-    zoneControls->addStretch();
-    auto* zoneSelectAll  = new QPushButton(i18n("Select All"), caseZonePanel_);
-    auto* zonePaint      = new QPushButton(i18n("Paint Selected"), caseZonePanel_);
-    auto* zoneOffSel     = new QPushButton(i18n("Off Selected"), caseZonePanel_);
-    auto* zoneFill       = new QPushButton(i18n("Fill All"), caseZonePanel_);
-    auto* zoneIdentify   = new QPushButton(i18n("Identify"), caseZonePanel_);
-    auto* zoneApply      = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
-                                           i18n("Apply Zones"), caseZonePanel_);
-    for(QPushButton* b : {zoneSelectAll, zonePaint, zoneOffSel, zoneFill, zoneIdentify, zoneApply}) {
-        zoneControls->addWidget(b);
-    }
-    zoneLayout->addLayout(zoneControls);
-
-    auto* zoneHint = new QLabel(
-        i18n("Zones are numbered (no fixed layout). Select zones, pick a colour, "
-             "Paint, then Apply Zones. Use Identify to light only the selected "
-             "zones on the case so you can find them."),
-        caseZonePanel_);
-    zoneHint->setWordWrap(true);
-    zoneHint->setEnabled(false);
-    zoneLayout->addWidget(zoneHint);
-
-    caseZonePanel_->setVisible(false);
-    casePanelLayout->addWidget(caseZonePanel_);
-
-    casePanel_->setVisible(false);
-    outer->addWidget(casePanel_);
-
-    connect(caseApplyButton_, &QPushButton::clicked, this, &MainWindow::onCaseApply);
-    connect(caseOffButton_, &QPushButton::clicked, this, &MainWindow::onCaseOff);
-    connect(casePerZoneButton_, &QPushButton::clicked, this, &MainWindow::onCasePerZoneToggle);
-    connect(zoneSelectAll, &QPushButton::clicked, zoneGrid_, &ZoneGridWidget::selectAll);
-    connect(zonePaint, &QPushButton::clicked, this,
-            [this] { zoneGrid_->paintSelection(caseColorButton_->color()); });
-    connect(zoneOffSel, &QPushButton::clicked, zoneGrid_, &ZoneGridWidget::clearSelection);
-    connect(zoneFill, &QPushButton::clicked, this,
-            [this] { zoneGrid_->fillAll(caseColorButton_->color()); });
-    connect(zoneIdentify, &QPushButton::clicked, this, &MainWindow::onCaseZoneIdentify);
-    connect(zoneApply, &QPushButton::clicked, this, &MainWindow::onCaseZoneApply);
-    connect(zoneGrid_, &ZoneGridWidget::selectionChanged, this, [this](int count) {
-        zoneSelectionLabel_->setText(count == 0 ? i18n("No zones selected")
-                                                : i18np("%1 zone selected", "%1 zones selected", count));
-    });
-
-    outer->addStretch();
-
-    autostartCheck_ = new QCheckBox(i18n("Restore lighting at login"), central);
-    autostartCheck_->setChecked(QFile::exists(autostartFilePath()));
-    autostartCheck_->setToolTip(i18n("Re-apply the active profile's lighting when you log in."));
-    outer->addWidget(autostartCheck_);
-
-    trayAutostartCheck_ = new QCheckBox(i18n("Start k-rgb in the system tray at login"), central);
-    trayAutostartCheck_->setChecked(QFile::exists(trayAutostartFilePath()));
-    trayAutostartCheck_->setToolTip(
-        i18n("Launch k-rgb (hidden, to the system tray) when you log in, so the "
-             "tray quick-switcher is always available."));
-    outer->addWidget(trayAutostartCheck_);
+    v->addWidget(perKeyPanel_, 1);
+    v->addStretch();
 
     auto* buttons = new QHBoxLayout();
     offButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("system-shutdown")),
-                                 i18n("Turn Off"), central);
+                                 i18n("Turn Off"), page);
     applyButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
-                                   i18n("Apply"), central);
+                                   i18n("Apply"), page);
     applyButton_->setDefault(true);
     buttons->addWidget(offButton_);
     buttons->addStretch();
     buttons->addWidget(applyButton_);
-    outer->addLayout(buttons);
+    v->addLayout(buttons);
 
-    setCentralWidget(central);
-
-    statusLabel_ = new QLabel(this);
-    statusLabel_->setTextFormat(Qt::RichText);
-    statusBar()->addPermanentWidget(statusLabel_);
-
-    // --- Connections -------------------------------------------------------
     connect(modeCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onModeChanged);
     connect(brightnessSlider_, &QSlider::valueChanged, this, &MainWindow::onBrightnessChanged);
     connect(applyButton_, &QPushButton::clicked, this, &MainWindow::onApply);
     connect(offButton_, &QPushButton::clicked, this, &MainWindow::onOff);
-    connect(autostartCheck_, &QCheckBox::toggled, this, &MainWindow::onAutostartToggled);
-    connect(trayAutostartCheck_, &QCheckBox::toggled, this, &MainWindow::onTrayAutostartToggled);
-
-    connect(profileCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onProfileSelected);
-    connect(newProfileBtn_, &QPushButton::clicked, this, &MainWindow::onNewProfile);
-    connect(renameProfileBtn_, &QPushButton::clicked, this, &MainWindow::onRenameProfile);
-    connect(deleteProfileBtn_, &QPushButton::clicked, this, &MainWindow::onDeleteProfile);
-
     connect(selectAllBtn, &QPushButton::clicked, keyboardWidget_, &KeyboardWidget::selectAll);
     connect(paintBtn, &QPushButton::clicked, this, &MainWindow::onPaintSelection);
     connect(offSelBtn, &QPushButton::clicked, this, &MainWindow::onOffSelection);
@@ -380,9 +317,6 @@ void MainWindow::buildUi() {
         selectionLabel_->setText(count == 0 ? i18n("No keys selected")
                                             : i18np("%1 key selected", "%1 keys selected", count));
     });
-
-    // Live feedback: re-apply when the colour changes or the brightness slider
-    // is released, so the keyboard tracks the controls without hitting Apply.
     connect(colorButton_, &KColorButton::changed, this, [this]() {
         if(loading_) {
             return;
@@ -400,6 +334,79 @@ void MainWindow::buildUi() {
             onApply();
         }
     });
+    return page;
+}
+
+QWidget* MainWindow::buildCasePage() {
+    auto* page = new QWidget(this);
+    auto* v = new QVBoxLayout(page);
+
+    // Whole-case quick controls.
+    auto* caseRow = new QHBoxLayout();
+    caseRow->addWidget(new QLabel(i18n("Whole-case colour:"), page));
+    caseColorButton_ = new KColorButton(QColor(0, 90, 255), page);
+    caseRow->addWidget(caseColorButton_);
+    caseApplyButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
+                                       i18n("Apply to All"), page);
+    caseOffButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("system-shutdown")),
+                                     i18n("Off"), page);
+    caseRow->addWidget(caseApplyButton_);
+    caseRow->addWidget(caseOffButton_);
+    caseRow->addStretch();
+    v->addLayout(caseRow);
+
+    caseArrangeCheck_ = new QCheckBox(i18n("Arrange zones — drag them to match your case"), page);
+    caseArrangeCheck_->setToolTip(
+        i18n("When on, drag zones to mirror your case's physical layout (saved). "
+             "When off, click/drag to select and paint."));
+    v->addWidget(caseArrangeCheck_);
+
+    zoneGrid_ = new ZoneGridWidget(page);
+    v->addWidget(zoneGrid_, 1);
+
+    auto* zoneControls = new QHBoxLayout();
+    zoneSelectionLabel_ = new QLabel(i18n("No zones selected"), page);
+    zoneControls->addWidget(zoneSelectionLabel_);
+    zoneControls->addStretch();
+    auto* zoneSelectAll = new QPushButton(i18n("Select All"), page);
+    auto* zonePaint     = new QPushButton(i18n("Paint Selected"), page);
+    auto* zoneOffSel    = new QPushButton(i18n("Off Selected"), page);
+    auto* zoneFill      = new QPushButton(i18n("Fill All"), page);
+    auto* zoneIdentify  = new QPushButton(i18n("Identify"), page);
+    auto* zoneApply     = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
+                                          i18n("Apply Zones"), page);
+    for(QPushButton* b : {zoneSelectAll, zonePaint, zoneOffSel, zoneFill, zoneIdentify, zoneApply}) {
+        zoneControls->addWidget(b);
+    }
+    v->addLayout(zoneControls);
+
+    auto* zoneHint = new QLabel(
+        i18n("Tip: turn on Arrange and drag zones to match your case, then turn it "
+             "off to paint. Identify lights only the selected zones on the case so "
+             "you can find them."),
+        page);
+    zoneHint->setWordWrap(true);
+    zoneHint->setEnabled(false);
+    v->addWidget(zoneHint);
+
+    connect(caseApplyButton_, &QPushButton::clicked, this, &MainWindow::onCaseApply);
+    connect(caseOffButton_, &QPushButton::clicked, this, &MainWindow::onCaseOff);
+    connect(caseArrangeCheck_, &QCheckBox::toggled, this,
+            [this](bool on) { zoneGrid_->setArrangeMode(on); });
+    connect(zoneSelectAll, &QPushButton::clicked, zoneGrid_, &ZoneGridWidget::selectAll);
+    connect(zonePaint, &QPushButton::clicked, this,
+            [this] { zoneGrid_->paintSelection(caseColorButton_->color()); });
+    connect(zoneOffSel, &QPushButton::clicked, zoneGrid_, &ZoneGridWidget::clearSelection);
+    connect(zoneFill, &QPushButton::clicked, this,
+            [this] { zoneGrid_->fillAll(caseColorButton_->color()); });
+    connect(zoneIdentify, &QPushButton::clicked, this, &MainWindow::onCaseZoneIdentify);
+    connect(zoneApply, &QPushButton::clicked, this, &MainWindow::onCaseZoneApply);
+    connect(zoneGrid_, &ZoneGridWidget::layoutChanged, this, &MainWindow::saveZoneLayout);
+    connect(zoneGrid_, &ZoneGridWidget::selectionChanged, this, [this](int count) {
+        zoneSelectionLabel_->setText(count == 0 ? i18n("No zones selected")
+                                                : i18np("%1 zone selected", "%1 zones selected", count));
+    });
+    return page;
 }
 
 void MainWindow::setupTray() {
@@ -620,9 +627,6 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
     }
     casePerZone_ = s.casePerZone;
     zoneGrid_->setZoneColors(s.caseZoneColors);
-    if(caseZonePanel_) {
-        caseZonePanel_->setVisible(s.casePerZone && !s.caseZoneColors.isEmpty());
-    }
 }
 
 LightingSettings MainWindow::currentSettings() const {
@@ -733,17 +737,6 @@ void MainWindow::onCaseOff() {
     QApplication::restoreOverrideCursor();
 }
 
-void MainWindow::onCasePerZoneToggle() {
-    if(!caseZonePanel_) {
-        return;
-    }
-    const bool show = !caseZonePanel_->isVisible();
-    caseZonePanel_->setVisible(show);
-    if(show) {
-        resize(qMax(width(), 720), qMax(height(), 520));
-    }
-}
-
 void MainWindow::onCaseZoneApply() {
     if(!caseController_ || !caseController_->isAvailable()) {
         return;
@@ -765,14 +758,47 @@ void MainWindow::onCaseZoneIdentify() {
 }
 
 void MainWindow::onCaseAvailabilityChanged(bool available) {
-    if(!casePanel_) {
+    if(!tabs_ || !casePage_) {
         return;
     }
-    casePanel_->setVisible(available);
-    if(available && caseController_) {
-        casePanel_->setToolTip(caseController_->description());
-        zoneGrid_->setZoneCount(caseController_->zoneCount());
+    const int idx = tabs_->indexOf(casePage_);
+    if(available && idx < 0) {
+        tabs_->addTab(casePage_, QIcon::fromTheme(QStringLiteral("preferences-desktop-color")), i18n("Case"));
+        if(caseController_) {
+            zoneGrid_->setZoneCount(caseController_->zoneCount());
+            tabs_->setTabToolTip(tabs_->indexOf(casePage_), caseController_->description());
+        }
+        loadZoneLayout();
+    } else if(!available && idx >= 0) {
+        tabs_->removeTab(idx);
     }
+}
+
+void MainWindow::saveZoneLayout() {
+    KConfigGroup g(KSharedConfig::openConfig(), QStringLiteral("CaseLayout"));
+    const QHash<int, QPoint> pos = zoneGrid_->positions();
+    for(auto it = pos.cbegin(); it != pos.cend(); ++it) {
+        g.writeEntry(QStringLiteral("z%1").arg(it.key()),
+                     QStringLiteral("%1,%2").arg(it.value().x()).arg(it.value().y()));
+    }
+    g.sync();
+}
+
+void MainWindow::loadZoneLayout() {
+    const KConfigGroup g(KSharedConfig::openConfig(), QStringLiteral("CaseLayout"));
+    QHash<int, QPoint> pos;
+    for(const QString& key : g.keyList()) {
+        if(!key.startsWith(QLatin1Char('z'))) {
+            continue;
+        }
+        bool ok = false;
+        const int idx = key.mid(1).toInt(&ok);
+        const QStringList parts = g.readEntry(key, QString()).split(QLatin1Char(','));
+        if(ok && parts.size() == 2) {
+            pos.insert(idx, QPoint(parts.at(0).toInt(), parts.at(1).toInt()));
+        }
+    }
+    zoneGrid_->setPositions(pos);
 }
 
 // --- Autostart / status -----------------------------------------------------
