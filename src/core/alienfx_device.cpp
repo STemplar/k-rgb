@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <thread>
 #include <vector>
 
@@ -201,13 +202,13 @@ bool AlienFXDevice::finishPlay() {
     return transact(out, resp, /*slow=*/true);
 }
 
-bool AlienFXDevice::selectZones(std::uint8_t first, std::uint8_t count) {
+bool AlienFXDevice::selectZones(const std::vector<std::uint8_t>& zones) {
     Buf out{}, resp{};
     out[0x01] = 0x03; out[0x02] = kCmdSelectZones;
-    out[0x03] = 0x01;                       // selection entry (loop flag, always 1)
-    out[0x04] = 0x00; out[0x05] = count;    // number of zones (big-endian; count <= 28)
-    for(std::uint8_t i = 0; i < count; ++i) {
-        out[0x06 + i] = static_cast<std::uint8_t>(first + i);
+    out[0x03] = 0x01;                                       // loop flag (always 1)
+    out[0x05] = static_cast<std::uint8_t>(zones.size());    // count (big-endian)
+    for(std::size_t i = 0; i < zones.size() && i < 28; ++i) {
+        out[0x06 + i] = zones[i];
     }
     return transact(out, resp);
 }
@@ -223,20 +224,36 @@ bool AlienFXDevice::addColorAction(std::uint8_t r, std::uint8_t g, std::uint8_t 
 }
 
 bool AlienFXDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    if(zoneCount_ <= 0) {
+        return false;
+    }
+    return setZoneColors(std::vector<ZoneColor>(zoneCount_, ZoneColor{r, g, b}));
+}
+
+bool AlienFXDevice::setZoneColors(const std::vector<ZoneColor>& colors) {
     if(fd_ < 0 || zoneCount_ <= 0) {
         return false;
     }
+    // Group zones by colour so identical zones share one action (a SelectZones
+    // packet holds at most 28 ids, so each group is sent in batches of 28).
+    std::map<ZoneColor, std::vector<std::uint8_t>> groups;
+    for(int z = 0; z < zoneCount_; ++z) {
+        const ZoneColor c = (static_cast<std::size_t>(z) < colors.size()) ? colors[z]
+                                                                          : ZoneColor{0, 0, 0};
+        groups[c].push_back(static_cast<std::uint8_t>(z));
+    }
+
     if(!beginAnimation()) {
         return false;
     }
-    // Select zones in batches (a SelectZones packet holds at most 28 ids) and
-    // colour each batch in one action — far fewer round-trips than per-zone.
-    constexpr int kZonesPerBatch = 28;
-    for(int start = 0; start < zoneCount_; start += kZonesPerBatch) {
-        const int n = std::min(kZonesPerBatch, zoneCount_ - start);
-        if(!selectZones(static_cast<std::uint8_t>(start), static_cast<std::uint8_t>(n))
-           || !addColorAction(r, g, b)) {
-            return false;
+    constexpr std::size_t kBatch = 28;
+    for(const auto& [color, zones] : groups) {
+        for(std::size_t i = 0; i < zones.size(); i += kBatch) {
+            const std::vector<std::uint8_t> batch(
+                zones.begin() + i, zones.begin() + std::min(i + kBatch, zones.size()));
+            if(!selectZones(batch) || !addColorAction(color[0], color[1], color[2])) {
+                return false;
+            }
         }
     }
     return finishPlay();

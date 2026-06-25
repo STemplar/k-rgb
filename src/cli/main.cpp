@@ -162,6 +162,8 @@ void usage() {
         "  --- case / chassis LEDs (Alienware AW-ELC controller) ---\n"
         "  krgb-cli case info\n"
         "  krgb-cli case solid R G B     all case zones\n"
+        "  krgb-cli case zone N R G B    light zone N only (others off)\n"
+        "  krgb-cli case rainbow         per-zone rainbow (reveals zone layout)\n"
         "  krgb-cli case off\n"
         "  krgb-cli case reset\n");
 }
@@ -198,6 +200,24 @@ int runCase(const std::vector<std::string>& a) {
     bool ok = true;
     if(sub == "solid" && a.size() >= 5) {
         ok = dev.setSolid(U(2), U(3), U(4));
+    } else if(sub == "zone" && a.size() >= 6) {
+        const int z = static_cast<int>(std::strtol(a[2].c_str(), nullptr, 0));
+        std::vector<AlienFXDevice::ZoneColor> colors(dev.zoneCount(), AlienFXDevice::ZoneColor{0, 0, 0});
+        if(z < 0 || z >= dev.zoneCount()) {
+            std::fprintf(stderr, "zone out of range (0..%d)\n", dev.zoneCount() - 1);
+            return 2;
+        }
+        colors[z] = {U(3), U(4), U(5)};
+        ok = dev.setZoneColors(colors);
+    } else if(sub == "rainbow") {
+        const int n = dev.zoneCount();
+        std::vector<AlienFXDevice::ZoneColor> colors(n);
+        for(int z = 0; z < n; ++z) {
+            std::uint8_t r, g, b;
+            hsv(n ? static_cast<double>(z) / n : 0.0, 1.0, 1.0, r, g, b);
+            colors[z] = {r, g, b};
+        }
+        ok = dev.setZoneColors(colors);
     } else if(sub == "off") {
         ok = dev.setOff();
     } else if(sub == "reset") {

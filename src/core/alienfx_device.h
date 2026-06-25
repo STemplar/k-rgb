@@ -13,6 +13,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace krgb {
 
@@ -38,8 +39,13 @@ public:
     int                zoneCount() const { return zoneCount_; }
     const std::string& firmware() const { return firmware_; }
 
-    // High-level operations (apply to all zones).
-    bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b);
+    using ZoneColor = std::array<std::uint8_t, 3>;  // {r, g, b}
+
+    // High-level operations.
+    bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b);  // all zones
+    // Per-zone colours; colors[i] is zone i. Extra entries ignored, missing
+    // zones left black. Zones are grouped by colour so it stays fast.
+    bool setZoneColors(const std::vector<ZoneColor>& colors);
     bool setOff() { return setSolid(0, 0, 0); }
     bool reset();
 
@@ -53,7 +59,7 @@ private:
     bool queryConfig();                 // zone count + firmware (called by open)
     bool beginAnimation();
     bool finishPlay();
-    bool selectZones(std::uint8_t first, std::uint8_t count);  // contiguous range
+    bool selectZones(const std::vector<std::uint8_t>& zones);  // one packet, <=28
     bool addColorAction(std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
     int         fd_        = -1;
