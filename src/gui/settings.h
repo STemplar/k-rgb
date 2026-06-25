@@ -30,9 +30,12 @@ struct LightingSettings {
     QHash<QString, QColor> keyColors;
 
     // Case / chassis lighting (AW-ELC controller). caseSet means this profile
-    // manages the case; caseColor is the whole-case colour to apply.
-    bool   caseSet   = false;
-    QColor caseColor = QColor(0, 90, 255);
+    // manages the case. casePerZone selects per-zone colours (caseZoneColors,
+    // keyed by zone index) over the whole-case caseColor.
+    bool               caseSet     = false;
+    bool               casePerZone = false;
+    QColor             caseColor   = QColor(0, 90, 255);
+    QHash<int, QColor> caseZoneColors;
 
     // Persist to / load from the named profile's KConfig group.
     void               save(const QString& profile) const;

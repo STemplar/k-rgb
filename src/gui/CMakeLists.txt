@@ -18,6 +18,7 @@ add_executable(krgb
     keyboardcontroller.cpp
     keyboardwidget.cpp
     casecontroller.cpp
+    zonegridwidget.cpp
     settings.cpp
 )
 

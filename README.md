@@ -58,9 +58,13 @@ laptops. It's a different (animation-based) protocol from the keyboard; the zone
 count is auto-discovered from the controller. Protocol referenced from OpenRGB's
 `AlienwareController`.
 
-When a controller is detected, the GUI shows a **Case lighting** panel (a
-whole-case colour you Apply, plus Off) that's saved with each profile and
-restored at login. The same is available from the CLI via `krgb-cli case`.
+When a controller is detected, the GUI shows a **Case lighting** panel: a
+whole-case colour (Apply / Off), plus a **Per-Zone…** editor — a numbered grid
+of the controller's zones you can paint individually (select / paint / fill /
+off), with an **Identify** button that lights only the selected zones on the
+case so you can map a number to its physical location (zones have no fixed
+layout). Both whole-case and per-zone choices are saved with each profile and
+restored at login. The CLI exposes the same via `krgb-cli case`.
 
 ## Requirements
 

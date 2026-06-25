@@ -4,6 +4,8 @@
 #pragma once
 
 #include <QColor>
+#include <QHash>
+#include <QList>
 #include <QObject>
 #include <QString>
 
@@ -23,6 +25,10 @@ public:
 
 public Q_SLOTS:
     bool applySolid(const QColor& color);
+    // Per-zone colours, keyed by zone index. Zones absent from the map are off.
+    bool applyZones(const QHash<int, QColor>& zoneColors);
+    // Light only the given zones (white), the rest off — to locate a zone.
+    bool identify(const QList<int>& zones);
     bool applyOff();
     void refresh();  // re-check presence (poll timer)
 

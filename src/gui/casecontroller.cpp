@@ -24,7 +24,9 @@ void CaseController::refresh() {
     const bool nowAvailable = !krgb::AlienFXDevice::findDevicePath().empty();
     if(nowAvailable != available_) {
         available_ = nowAvailable;
-        if(!available_ && device_.isOpen()) {
+        if(available_) {
+            ensureOpen();  // populate zoneCount_ so the editor knows the size
+        } else if(device_.isOpen()) {
             device_.close();
             zoneCount_ = 0;
         }
@@ -54,6 +56,34 @@ bool CaseController::applySolid(const QColor& color) {
         return false;
     }
     return true;
+}
+
+bool CaseController::applyZones(const QHash<int, QColor>& zoneColors) {
+    if(!ensureOpen()) {
+        return false;
+    }
+    std::vector<krgb::AlienFXDevice::ZoneColor> colors(zoneCount_, {0, 0, 0});
+    for(auto it = zoneColors.cbegin(); it != zoneColors.cend(); ++it) {
+        if(it.key() >= 0 && it.key() < zoneCount_) {
+            const QColor& c = it.value();
+            colors[it.key()] = {static_cast<std::uint8_t>(c.red()),
+                                static_cast<std::uint8_t>(c.green()),
+                                static_cast<std::uint8_t>(c.blue())};
+        }
+    }
+    if(!device_.setZoneColors(colors)) {
+        Q_EMIT error(i18n("Failed to set per-zone case colours."));
+        return false;
+    }
+    return true;
+}
+
+bool CaseController::identify(const QList<int>& zones) {
+    QHash<int, QColor> map;
+    for(int z : zones) {
+        map.insert(z, QColor(255, 255, 255));
+    }
+    return applyZones(map);  // selected zones white, the rest off
 }
 
 bool CaseController::applyOff() {

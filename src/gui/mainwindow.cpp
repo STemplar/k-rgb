@@ -3,6 +3,7 @@
 #include "casecontroller.h"
 #include "keyboardcontroller.h"
 #include "keyboardwidget.h"
+#include "zonegridwidget.h"
 #include "core/aw410k_device.h"
 #include "core/keymap.h"
 
@@ -254,22 +255,77 @@ void MainWindow::buildUi() {
 
     // --- Case / chassis lighting (shown only when a controller is present) --
     casePanel_ = new QGroupBox(i18n("Case lighting"), central);
-    auto* caseLayout = new QHBoxLayout(casePanel_);
-    caseLayout->addWidget(new QLabel(i18n("Colour:"), casePanel_));
+    auto* casePanelLayout = new QVBoxLayout(casePanel_);
+
+    auto* caseRow = new QHBoxLayout();
+    caseRow->addWidget(new QLabel(i18n("Colour:"), casePanel_));
     caseColorButton_ = new KColorButton(QColor(0, 90, 255), casePanel_);
-    caseLayout->addWidget(caseColorButton_);
-    caseLayout->addStretch();
+    caseRow->addWidget(caseColorButton_);
+    caseRow->addStretch();
+    casePerZoneButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("color-management")),
+                                         i18n("Per-Zone…"), casePanel_);
     caseOffButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("system-shutdown")),
                                      i18n("Off"), casePanel_);
     caseApplyButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
                                        i18n("Apply to Case"), casePanel_);
-    caseLayout->addWidget(caseOffButton_);
-    caseLayout->addWidget(caseApplyButton_);
+    caseRow->addWidget(casePerZoneButton_);
+    caseRow->addWidget(caseOffButton_);
+    caseRow->addWidget(caseApplyButton_);
+    casePanelLayout->addLayout(caseRow);
+
+    // Per-zone editor (hidden until "Per-Zone…").
+    caseZonePanel_ = new QWidget(casePanel_);
+    auto* zoneLayout = new QVBoxLayout(caseZonePanel_);
+    zoneLayout->setContentsMargins(0, 0, 0, 0);
+    zoneGrid_ = new ZoneGridWidget(caseZonePanel_);
+    zoneLayout->addWidget(zoneGrid_, 1);
+
+    auto* zoneControls = new QHBoxLayout();
+    zoneSelectionLabel_ = new QLabel(i18n("No zones selected"), caseZonePanel_);
+    zoneControls->addWidget(zoneSelectionLabel_);
+    zoneControls->addStretch();
+    auto* zoneSelectAll  = new QPushButton(i18n("Select All"), caseZonePanel_);
+    auto* zonePaint      = new QPushButton(i18n("Paint Selected"), caseZonePanel_);
+    auto* zoneOffSel     = new QPushButton(i18n("Off Selected"), caseZonePanel_);
+    auto* zoneFill       = new QPushButton(i18n("Fill All"), caseZonePanel_);
+    auto* zoneIdentify   = new QPushButton(i18n("Identify"), caseZonePanel_);
+    auto* zoneApply      = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
+                                           i18n("Apply Zones"), caseZonePanel_);
+    for(QPushButton* b : {zoneSelectAll, zonePaint, zoneOffSel, zoneFill, zoneIdentify, zoneApply}) {
+        zoneControls->addWidget(b);
+    }
+    zoneLayout->addLayout(zoneControls);
+
+    auto* zoneHint = new QLabel(
+        i18n("Zones are numbered (no fixed layout). Select zones, pick a colour, "
+             "Paint, then Apply Zones. Use Identify to light only the selected "
+             "zones on the case so you can find them."),
+        caseZonePanel_);
+    zoneHint->setWordWrap(true);
+    zoneHint->setEnabled(false);
+    zoneLayout->addWidget(zoneHint);
+
+    caseZonePanel_->setVisible(false);
+    casePanelLayout->addWidget(caseZonePanel_);
+
     casePanel_->setVisible(false);
     outer->addWidget(casePanel_);
 
     connect(caseApplyButton_, &QPushButton::clicked, this, &MainWindow::onCaseApply);
     connect(caseOffButton_, &QPushButton::clicked, this, &MainWindow::onCaseOff);
+    connect(casePerZoneButton_, &QPushButton::clicked, this, &MainWindow::onCasePerZoneToggle);
+    connect(zoneSelectAll, &QPushButton::clicked, zoneGrid_, &ZoneGridWidget::selectAll);
+    connect(zonePaint, &QPushButton::clicked, this,
+            [this] { zoneGrid_->paintSelection(caseColorButton_->color()); });
+    connect(zoneOffSel, &QPushButton::clicked, zoneGrid_, &ZoneGridWidget::clearSelection);
+    connect(zoneFill, &QPushButton::clicked, this,
+            [this] { zoneGrid_->fillAll(caseColorButton_->color()); });
+    connect(zoneIdentify, &QPushButton::clicked, this, &MainWindow::onCaseZoneIdentify);
+    connect(zoneApply, &QPushButton::clicked, this, &MainWindow::onCaseZoneApply);
+    connect(zoneGrid_, &ZoneGridWidget::selectionChanged, this, [this](int count) {
+        zoneSelectionLabel_->setText(count == 0 ? i18n("No zones selected")
+                                                : i18np("%1 zone selected", "%1 zones selected", count));
+    });
 
     outer->addStretch();
 
@@ -562,6 +618,11 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
     if(s.caseColor.isValid()) {
         caseColorButton_->setColor(s.caseColor);
     }
+    casePerZone_ = s.casePerZone;
+    zoneGrid_->setZoneColors(s.caseZoneColors);
+    if(caseZonePanel_) {
+        caseZonePanel_->setVisible(s.casePerZone && !s.caseZoneColors.isEmpty());
+    }
 }
 
 LightingSettings MainWindow::currentSettings() const {
@@ -583,7 +644,9 @@ LightingSettings MainWindow::currentSettings() const {
     s.direction = directionCombo_->currentData().toInt();
     s.brightness = brightnessSlider_->value();
     s.caseSet = caseController_ && caseController_->isAvailable();
+    s.casePerZone = casePerZone_;
     s.caseColor = caseColorButton_->color();
+    s.caseZoneColors = zoneGrid_->zoneColors();
     return s;
 }
 
@@ -653,6 +716,7 @@ void MainWindow::onCaseApply() {
     if(!caseController_ || !caseController_->isAvailable()) {
         return;
     }
+    casePerZone_ = false;  // whole-case solid mode
     // The case apply is a multi-packet sequence (~1-2s); show a busy cursor.
     QApplication::setOverrideCursor(Qt::WaitCursor);
     caseController_->applySolid(caseColorButton_->color());
@@ -669,6 +733,37 @@ void MainWindow::onCaseOff() {
     QApplication::restoreOverrideCursor();
 }
 
+void MainWindow::onCasePerZoneToggle() {
+    if(!caseZonePanel_) {
+        return;
+    }
+    const bool show = !caseZonePanel_->isVisible();
+    caseZonePanel_->setVisible(show);
+    if(show) {
+        resize(qMax(width(), 720), qMax(height(), 520));
+    }
+}
+
+void MainWindow::onCaseZoneApply() {
+    if(!caseController_ || !caseController_->isAvailable()) {
+        return;
+    }
+    casePerZone_ = true;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    caseController_->applyZones(zoneGrid_->zoneColors());
+    QApplication::restoreOverrideCursor();
+    currentSettings().save(Profiles::current());
+}
+
+void MainWindow::onCaseZoneIdentify() {
+    if(!caseController_ || !caseController_->isAvailable()) {
+        return;
+    }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    caseController_->identify(zoneGrid_->selectedZones());  // selected zones white, rest off
+    QApplication::restoreOverrideCursor();
+}
+
 void MainWindow::onCaseAvailabilityChanged(bool available) {
     if(!casePanel_) {
         return;
@@ -676,6 +771,7 @@ void MainWindow::onCaseAvailabilityChanged(bool available) {
     casePanel_->setVisible(available);
     if(available && caseController_) {
         casePanel_->setToolTip(caseController_->description());
+        zoneGrid_->setZoneCount(caseController_->zoneCount());
     }
 }
 

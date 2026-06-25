@@ -20,6 +20,7 @@ class KStatusNotifierItem;
 class KeyboardController;
 class KeyboardWidget;
 class CaseController;
+class ZoneGridWidget;
 
 class MainWindow : public KMainWindow {
     Q_OBJECT
@@ -56,6 +57,9 @@ private Q_SLOTS:
     void onCaseApply();
     void onCaseOff();
     void onCaseAvailabilityChanged(bool available);
+    void onCasePerZoneToggle();
+    void onCaseZoneApply();
+    void onCaseZoneIdentify();
 
 private:
     struct ModeEntry {
@@ -107,10 +111,15 @@ private:
     KeyboardWidget* keyboardWidget_ = nullptr;
     QLabel*         selectionLabel_ = nullptr;
 
-    QGroupBox*    casePanel_       = nullptr;
-    KColorButton* caseColorButton_ = nullptr;
-    QPushButton*  caseApplyButton_ = nullptr;
-    QPushButton*  caseOffButton_   = nullptr;
+    QGroupBox*      casePanel_          = nullptr;
+    KColorButton*   caseColorButton_    = nullptr;
+    QPushButton*    caseApplyButton_    = nullptr;
+    QPushButton*    caseOffButton_      = nullptr;
+    QPushButton*    casePerZoneButton_  = nullptr;
+    QWidget*        caseZonePanel_      = nullptr;
+    ZoneGridWidget* zoneGrid_           = nullptr;
+    QLabel*         zoneSelectionLabel_ = nullptr;
+    bool            casePerZone_        = false;
 
     KStatusNotifierItem* tray_         = nullptr;
     QMenu*               profilesMenu_ = nullptr;

@@ -37,6 +37,32 @@ QHash<QString, QColor> decodeKeyColors(const QStringList& entries) {
     return map;
 }
 
+QStringList encodeZoneColors(const QHash<int, QColor>& zoneColors) {
+    QStringList out;
+    out.reserve(zoneColors.size());
+    for(auto it = zoneColors.cbegin(); it != zoneColors.cend(); ++it) {
+        out << QString::number(it.key()) + QLatin1Char('=') + it.value().name();
+    }
+    return out;
+}
+
+QHash<int, QColor> decodeZoneColors(const QStringList& entries) {
+    QHash<int, QColor> map;
+    for(const QString& e : entries) {
+        const int eq = e.indexOf(QLatin1Char('='));
+        if(eq <= 0) {
+            continue;
+        }
+        bool ok = false;
+        const int idx = e.left(eq).toInt(&ok);
+        const QColor c(e.mid(eq + 1));
+        if(ok && c.isValid()) {
+            map.insert(idx, c);
+        }
+    }
+    return map;
+}
+
 void writeInto(KConfigGroup& g, const LightingSettings& s) {
     g.writeEntry("kind", static_cast<int>(s.kind));
     g.writeEntry("effectMode", s.effectMode);
@@ -46,7 +72,9 @@ void writeInto(KConfigGroup& g, const LightingSettings& s) {
     g.writeEntry("brightness", s.brightness);
     g.writeEntry("keyColors", encodeKeyColors(s.keyColors));
     g.writeEntry("caseSet", s.caseSet);
+    g.writeEntry("casePerZone", s.casePerZone);
     g.writeEntry("caseColor", s.caseColor);
+    g.writeEntry("caseZoneColors", encodeZoneColors(s.caseZoneColors));
 }
 
 LightingSettings readFrom(const KConfigGroup& g) {
@@ -58,8 +86,10 @@ LightingSettings readFrom(const KConfigGroup& g) {
     s.direction  = g.readEntry("direction", s.direction);
     s.brightness = g.readEntry("brightness", s.brightness);
     s.keyColors  = decodeKeyColors(g.readEntry("keyColors", QStringList()));
-    s.caseSet    = g.readEntry("caseSet", s.caseSet);
-    s.caseColor  = g.readEntry("caseColor", s.caseColor);
+    s.caseSet      = g.readEntry("caseSet", s.caseSet);
+    s.casePerZone  = g.readEntry("casePerZone", s.casePerZone);
+    s.caseColor    = g.readEntry("caseColor", s.caseColor);
+    s.caseZoneColors = decodeZoneColors(g.readEntry("caseZoneColors", QStringList()));
     return s;
 }
 
@@ -111,7 +141,11 @@ LightingSettings LightingSettings::load(const QString& profile) {
 
 bool LightingSettings::apply(KeyboardController& controller, CaseController* caseController) const {
     if(caseSet && caseController && caseController->isAvailable()) {
-        caseController->applySolid(caseColor);  // whole-case colour (applied as-is)
+        if(casePerZone) {
+            caseController->applyZones(caseZoneColors);
+        } else {
+            caseController->applySolid(caseColor);  // whole-case colour (applied as-is)
+        }
     }
     switch(kind) {
         case Solid:   return controller.applySolid(color, brightness);
