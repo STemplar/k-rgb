@@ -1,0 +1,17 @@
+# Alienware RGB lighting devices — vendor HID interfaces.
+# Grants the logged-in desktop user read/write access so k-rgb runs without root.
+#
+#   AW410K keyboard        04f2:1968
+#   AW510K keyboard        04f2:1830
+#   AW-ELC case controller 187c:0550 / 187c:0551
+#
+# Install:
+#   sudo cp 60-alienware-rgb.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=hidraw
+# (or simply replug the device afterwards)
+
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="04f2", ATTRS{idProduct}=="1968", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="04f2", ATTRS{idProduct}=="1830", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="187c", ATTRS{idProduct}=="0550", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="187c", ATTRS{idProduct}=="0551", MODE="0660", GROUP="plugdev", TAG+="uaccess"

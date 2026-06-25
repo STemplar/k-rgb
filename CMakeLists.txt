@@ -18,6 +18,7 @@ find_package(Threads REQUIRED)
 # --- Core engine: pure C++ + Linux hidraw, no Qt/KF6 dependency -------------
 add_library(krgb-core STATIC
     src/core/aw410k_device.cpp
+    src/core/alienfx_device.cpp
 )
 target_include_directories(krgb-core PUBLIC src)
 target_link_libraries(krgb-core PUBLIC Threads::Threads)
@@ -44,6 +45,6 @@ if(BUILD_GUI)
             DESTINATION ${KDE_INSTALL_METAINFODIR})
     install(FILES packaging/icons/io.github.busybeaversoftware.krgb.svg
             DESTINATION ${KDE_INSTALL_FULL_ICONDIR}/hicolor/scalable/apps)
-    install(FILES packaging/udev/60-alienware-keyboards.rules
+    install(FILES packaging/udev/60-alienware-rgb.rules
             DESTINATION ${UDEV_RULES_INSTALL_DIR})
 endif()

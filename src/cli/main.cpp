@@ -1,6 +1,7 @@
 // krgb-cli — exercises the AW410K core engine on real hardware.
 // Mirrors tools/aw410k.py so the C++ port can be validated against it.
 #include "core/aw410k_device.h"
+#include "core/alienfx_device.h"
 #include "core/keymap.h"
 
 #include <cmath>
@@ -157,7 +158,59 @@ void usage() {
         "  krgb-cli key LABEL R G B      light one key (others off)\n"
         "  krgb-cli perkey K=R,G,B ...   set listed keys (others off)\n"
         "                                colour is R,G,B or #RRGGBB\n"
-        "  krgb-cli perkey-file FILE     read 'KEY R G B' lines (- = stdin)\n");
+        "  krgb-cli perkey-file FILE     read 'KEY R G B' lines (- = stdin)\n"
+        "  --- case / chassis LEDs (Alienware AW-ELC controller) ---\n"
+        "  krgb-cli case info\n"
+        "  krgb-cli case solid R G B     all case zones\n"
+        "  krgb-cli case off\n"
+        "  krgb-cli case reset\n");
+}
+
+// Handle the `case ...` subcommands against the AlienFX chassis controller.
+// Returns the process exit code.
+int runCase(const std::vector<std::string>& a) {
+    const std::string sub = a.size() > 1 ? a[1] : std::string();
+
+    if(sub == "info") {
+        AlienFXDevice dev;
+        std::string err;
+        if(!dev.open(&err)) {
+            std::printf("case controller : NOT FOUND\n");
+            return 1;
+        }
+        std::printf("case controller : %s\n", dev.path().c_str());
+        std::printf("firmware        : %s\n", dev.firmware().c_str());
+        std::printf("zones           : %d\n", dev.zoneCount());
+        return 0;
+    }
+
+    AlienFXDevice dev;
+    std::string err;
+    if(!dev.open(&err)) {
+        std::fprintf(stderr, "error: %s\n", err.c_str());
+        return 1;
+    }
+
+    auto U = [&](std::size_t i) -> std::uint8_t {
+        return static_cast<std::uint8_t>(std::strtol(a[i].c_str(), nullptr, 0));
+    };
+
+    bool ok = true;
+    if(sub == "solid" && a.size() >= 5) {
+        ok = dev.setSolid(U(2), U(3), U(4));
+    } else if(sub == "off") {
+        ok = dev.setOff();
+    } else if(sub == "reset") {
+        ok = dev.reset();
+    } else {
+        usage();
+        return 2;
+    }
+    if(!ok) {
+        std::fprintf(stderr, "error: case write failed (zones=%d)\n", dev.zoneCount());
+        return 1;
+    }
+    return 0;
 }
 
 } // namespace
@@ -169,6 +222,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     const std::string cmd = a[0];
+
+    if(cmd == "case") {
+        return runCase(a);
+    }
 
     if(cmd == "info") {
         const KeyboardModel* model = nullptr;

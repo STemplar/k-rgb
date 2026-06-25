@@ -154,7 +154,7 @@ class AW410K:
             except PermissionError:
                 raise SystemExit(
                     f"Permission denied opening {self.path}.\n"
-                    f"Run with sudo, or install packaging/udev/60-alienware-keyboards.rules."
+                    f"Run with sudo, or install packaging/udev/60-alienware-rgb.rules."
                 )
 
     # ---- low-level ------------------------------------------------------- #

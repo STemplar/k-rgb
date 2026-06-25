@@ -50,6 +50,15 @@ reports welcome. Detection covers only models in the table; an unknown keyboard
 can't be assumed compatible because the protocol is reverse-engineered per
 model. Contributions for other Alienware devices are welcome.
 
+### Case / chassis lighting (experimental)
+
+k-rgb also drives the **Alienware "AW-ELC" lighting controller** (`187c:0550` /
+`187c:0551`) that runs case/chassis zones on many Alienware desktops and
+laptops. It's a different (animation-based) protocol from the keyboard, so it
+lives behind the `krgb-cli case` subcommands for now (no GUI yet). The zone
+count is auto-discovered from the controller. Protocol referenced from OpenRGB's
+`AlienwareController`.
+
 ## Requirements
 
 - Linux with a recent KDE Plasma / Qt 6 desktop
@@ -101,7 +110,7 @@ Install the udev rule so your desktop user can access the keyboard's lighting
 interface:
 
 ```bash
-sudo cp packaging/udev/60-alienware-keyboards.rules /etc/udev/rules.d/
+sudo cp packaging/udev/60-alienware-rgb.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=hidraw
 ```
@@ -158,6 +167,15 @@ krgb-cli off
 list is turned off. Key labels are case-insensitive (see `src/core/keymap.h`);
 colours accept `R,G,B`, `R G B`, or `#RRGGBB`. File lines may use `#` comments.
 
+Case / chassis lighting (Alienware AW-ELC controller):
+
+```bash
+krgb-cli case info             # detected controller, firmware, zone count
+krgb-cli case solid 0 90 255   # all case zones blue
+krgb-cli case off
+krgb-cli case reset
+```
+
 ### Python reference tool
 
 `tools/aw410k.py` is a zero-dependency implementation of the full protocol,
@@ -191,7 +209,7 @@ model in the same protocol family:
 2. If its key layout differs from the AW410K, tag the affected `kKeyMap` entries
    with a `models` mask so only the right model includes them (e.g. the AW510K
    excludes the discrete volume keys). Identical layouts need no changes.
-3. Add the USB id to `packaging/udev/60-alienware-keyboards.rules`.
+3. Add the USB id to `packaging/udev/60-alienware-rgb.rules`.
 
 Detection, naming, the per-key editor, and effects then work automatically. If
 the model uses a *different* lighting protocol, the packet builders in

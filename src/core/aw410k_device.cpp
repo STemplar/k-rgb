@@ -151,7 +151,7 @@ bool AW410KDevice::openPath(const std::string& path, std::string* err) {
     if(fd < 0) {
         if(err) {
             *err = "open " + path + ": " + std::strerror(errno) +
-                   " (install packaging/udev/60-alienware-keyboards.rules, or run as root)";
+                   " (install packaging/udev/60-alienware-rgb.rules, or run as root)";
         }
         return false;
     }
