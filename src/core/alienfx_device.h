@@ -53,7 +53,7 @@ private:
     bool queryConfig();                 // zone count + firmware (called by open)
     bool beginAnimation();
     bool finishPlay();
-    bool selectZone(std::uint8_t zone);
+    bool selectZones(std::uint8_t first, std::uint8_t count);  // contiguous range
     bool addColorAction(std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
     int         fd_        = -1;

@@ -13,6 +13,7 @@
 #include "core/aw410k_device.h"
 
 class KeyboardController;
+class CaseController;
 
 struct LightingSettings {
     enum Kind { Solid, Rainbow, Effect, PerKey };
@@ -28,11 +29,17 @@ struct LightingSettings {
     // Keys absent from the map are treated as off (black).
     QHash<QString, QColor> keyColors;
 
+    // Case / chassis lighting (AW-ELC controller). caseSet means this profile
+    // manages the case; caseColor is the whole-case colour to apply.
+    bool   caseSet   = false;
+    QColor caseColor = QColor(0, 90, 255);
+
     // Persist to / load from the named profile's KConfig group.
     void               save(const QString& profile) const;
     static LightingSettings load(const QString& profile);
 
-    bool apply(KeyboardController& controller) const;
+    // Apply keyboard lighting, and (if caseSet and caseController given) the case.
+    bool apply(KeyboardController& controller, CaseController* caseController = nullptr) const;
 };
 
 // Named-profile registry. Profiles are stored as "Profile <name>" groups in the

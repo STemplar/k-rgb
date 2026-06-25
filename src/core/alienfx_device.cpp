@@ -201,12 +201,14 @@ bool AlienFXDevice::finishPlay() {
     return transact(out, resp, /*slow=*/true);
 }
 
-bool AlienFXDevice::selectZone(std::uint8_t zone) {
+bool AlienFXDevice::selectZones(std::uint8_t first, std::uint8_t count) {
     Buf out{}, resp{};
     out[0x01] = 0x03; out[0x02] = kCmdSelectZones;
-    out[0x03] = 0x01;                 // count of selection entries
-    out[0x04] = 0x00; out[0x05] = 0x01;  // number of zones (1)
-    out[0x06] = zone;
+    out[0x03] = 0x01;                       // selection entry (loop flag, always 1)
+    out[0x04] = 0x00; out[0x05] = count;    // number of zones (big-endian; count <= 28)
+    for(std::uint8_t i = 0; i < count; ++i) {
+        out[0x06 + i] = static_cast<std::uint8_t>(first + i);
+    }
     return transact(out, resp);
 }
 
@@ -227,8 +229,13 @@ bool AlienFXDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     if(!beginAnimation()) {
         return false;
     }
-    for(int z = 0; z < zoneCount_; ++z) {
-        if(!selectZone(static_cast<std::uint8_t>(z)) || !addColorAction(r, g, b)) {
+    // Select zones in batches (a SelectZones packet holds at most 28 ids) and
+    // colour each batch in one action — far fewer round-trips than per-zone.
+    constexpr int kZonesPerBatch = 28;
+    for(int start = 0; start < zoneCount_; start += kZonesPerBatch) {
+        const int n = std::min(kZonesPerBatch, zoneCount_ - start);
+        if(!selectZones(static_cast<std::uint8_t>(start), static_cast<std::uint8_t>(n))
+           || !addColorAction(r, g, b)) {
             return false;
         }
     }

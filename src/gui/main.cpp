@@ -1,3 +1,4 @@
+#include "casecontroller.h"
 #include "keyboardcontroller.h"
 #include "mainwindow.h"
 #include "settings.h"
@@ -32,7 +33,8 @@ int main(int argc, char** argv) {
     // re-apply the saved lighting and exit, without showing a window.
     if(app.arguments().contains(QStringLiteral("--apply"))) {
         KeyboardController controller;
-        LightingSettings::load(Profiles::current()).apply(controller);
+        CaseController     caseController;
+        LightingSettings::load(Profiles::current()).apply(controller, &caseController);
         return 0;
     }
 
@@ -40,7 +42,8 @@ int main(int argc, char** argv) {
     KDBusService service(KDBusService::Unique);
 
     auto* controller = new KeyboardController(&app);
-    auto* window = new MainWindow(controller);
+    auto* caseController = new CaseController(&app);
+    auto* window = new MainWindow(controller, caseController);
 
     QObject::connect(&service, &KDBusService::activateRequested, window,
                      [window](const QStringList&, const QString&) {

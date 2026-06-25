@@ -54,10 +54,13 @@ model. Contributions for other Alienware devices are welcome.
 
 k-rgb also drives the **Alienware "AW-ELC" lighting controller** (`187c:0550` /
 `187c:0551`) that runs case/chassis zones on many Alienware desktops and
-laptops. It's a different (animation-based) protocol from the keyboard, so it
-lives behind the `krgb-cli case` subcommands for now (no GUI yet). The zone
+laptops. It's a different (animation-based) protocol from the keyboard; the zone
 count is auto-discovered from the controller. Protocol referenced from OpenRGB's
 `AlienwareController`.
+
+When a controller is detected, the GUI shows a **Case lighting** panel (a
+whole-case colour you Apply, plus Off) that's saved with each profile and
+restored at login. The same is available from the CLI via `krgb-cli case`.
 
 ## Requirements
 

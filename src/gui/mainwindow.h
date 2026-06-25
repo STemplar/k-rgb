@@ -9,6 +9,7 @@ class QActionGroup;
 class QCheckBox;
 class QCloseEvent;
 class QComboBox;
+class QGroupBox;
 class QLabel;
 class QMenu;
 class QPushButton;
@@ -18,11 +19,13 @@ class KColorButton;
 class KStatusNotifierItem;
 class KeyboardController;
 class KeyboardWidget;
+class CaseController;
 
 class MainWindow : public KMainWindow {
     Q_OBJECT
 public:
-    explicit MainWindow(KeyboardController* controller, QWidget* parent = nullptr);
+    explicit MainWindow(KeyboardController* controller, CaseController* caseController,
+                        QWidget* parent = nullptr);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -49,6 +52,11 @@ private Q_SLOTS:
     void onFillAll();
     void onPerKeyChanged();
 
+    // Case lighting
+    void onCaseApply();
+    void onCaseOff();
+    void onCaseAvailabilityChanged(bool available);
+
 private:
     struct ModeEntry {
         QString name;
@@ -74,6 +82,7 @@ private:
     QString          trayAutostartFilePath() const;
 
     KeyboardController* controller_;
+    CaseController*     caseController_;
     QVector<ModeEntry>  modes_;
     bool                loading_ = false;
 
@@ -97,6 +106,11 @@ private:
     QWidget*        perKeyPanel_    = nullptr;
     KeyboardWidget* keyboardWidget_ = nullptr;
     QLabel*         selectionLabel_ = nullptr;
+
+    QGroupBox*    casePanel_       = nullptr;
+    KColorButton* caseColorButton_ = nullptr;
+    QPushButton*  caseApplyButton_ = nullptr;
+    QPushButton*  caseOffButton_   = nullptr;
 
     KStatusNotifierItem* tray_         = nullptr;
     QMenu*               profilesMenu_ = nullptr;

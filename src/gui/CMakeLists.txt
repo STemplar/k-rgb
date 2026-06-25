@@ -17,6 +17,7 @@ add_executable(krgb
     mainwindow.cpp
     keyboardcontroller.cpp
     keyboardwidget.cpp
+    casecontroller.cpp
     settings.cpp
 )
 

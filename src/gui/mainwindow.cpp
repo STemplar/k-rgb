@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include "casecontroller.h"
 #include "keyboardcontroller.h"
 #include "keyboardwidget.h"
 #include "core/aw410k_device.h"
@@ -15,6 +16,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLabel>
@@ -84,9 +86,9 @@ QHash<QString, QColor> makeUsaFlag() {
 
 } // namespace
 
-MainWindow::MainWindow(KeyboardController* controller, QWidget* parent)
-    : KMainWindow(parent), controller_(controller) {
-    setWindowTitle(i18n("k-rgb — Alienware keyboard lighting"));
+MainWindow::MainWindow(KeyboardController* controller, CaseController* caseController, QWidget* parent)
+    : KMainWindow(parent), controller_(controller), caseController_(caseController) {
+    setWindowTitle(i18n("k-rgb — Alienware lighting"));
     populateModes();
     buildUi();
     setupTray();
@@ -101,6 +103,13 @@ MainWindow::MainWindow(KeyboardController* controller, QWidget* parent)
             this, &MainWindow::onConnectionChanged);
     connect(controller_, &KeyboardController::error,
             this, &MainWindow::onError);
+
+    if(caseController_) {
+        connect(caseController_, &CaseController::availabilityChanged,
+                this, &MainWindow::onCaseAvailabilityChanged);
+        connect(caseController_, &CaseController::error, this, &MainWindow::onError);
+        onCaseAvailabilityChanged(caseController_->isAvailable());
+    }
 
     onConnectionChanged(controller_->isConnected(), controller_->devicePath());
     onModeChanged();
@@ -242,6 +251,25 @@ void MainWindow::buildUi() {
 
     perKeyPanel_->setVisible(false);
     outer->addWidget(perKeyPanel_, 1);
+
+    // --- Case / chassis lighting (shown only when a controller is present) --
+    casePanel_ = new QGroupBox(i18n("Case lighting"), central);
+    auto* caseLayout = new QHBoxLayout(casePanel_);
+    caseLayout->addWidget(new QLabel(i18n("Colour:"), casePanel_));
+    caseColorButton_ = new KColorButton(QColor(0, 90, 255), casePanel_);
+    caseLayout->addWidget(caseColorButton_);
+    caseLayout->addStretch();
+    caseOffButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("system-shutdown")),
+                                     i18n("Off"), casePanel_);
+    caseApplyButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
+                                       i18n("Apply to Case"), casePanel_);
+    caseLayout->addWidget(caseOffButton_);
+    caseLayout->addWidget(caseApplyButton_);
+    casePanel_->setVisible(false);
+    outer->addWidget(casePanel_);
+
+    connect(caseApplyButton_, &QPushButton::clicked, this, &MainWindow::onCaseApply);
+    connect(caseOffButton_, &QPushButton::clicked, this, &MainWindow::onCaseOff);
 
     outer->addStretch();
 
@@ -432,8 +460,12 @@ void MainWindow::switchToProfile(const QString& name, bool apply) {
     Profiles::setCurrent(name);
     loading_ = false;
 
-    if(apply && controller_->isConnected()) {
-        s.apply(*controller_);
+    if(apply) {
+        if(controller_->isConnected()) {
+            s.apply(*controller_, caseController_);
+        } else if(caseController_ && caseController_->isAvailable() && s.caseSet) {
+            caseController_->applySolid(s.caseColor);  // keyboard absent, case present
+        }
     }
     deleteProfileBtn_->setEnabled(Profiles::names().size() > 1);
     rebuildProfilesMenu();
@@ -527,6 +559,9 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
     brightnessSlider_->setValue(s.brightness);
     brightnessValue_->setText(QStringLiteral("%1%").arg(s.brightness));
     keyboardWidget_->setKeyColors(s.keyColors);
+    if(s.caseColor.isValid()) {
+        caseColorButton_->setColor(s.caseColor);
+    }
 }
 
 LightingSettings MainWindow::currentSettings() const {
@@ -547,6 +582,8 @@ LightingSettings MainWindow::currentSettings() const {
     s.speed = speedCombo_->currentData().toInt();
     s.direction = directionCombo_->currentData().toInt();
     s.brightness = brightnessSlider_->value();
+    s.caseSet = caseController_ && caseController_->isAvailable();
+    s.caseColor = caseColorButton_->color();
     return s;
 }
 
@@ -608,6 +645,38 @@ void MainWindow::onPerKeyChanged() {
         s.apply(*controller_);
     }
     s.save(Profiles::current());
+}
+
+// --- Case lighting ----------------------------------------------------------
+
+void MainWindow::onCaseApply() {
+    if(!caseController_ || !caseController_->isAvailable()) {
+        return;
+    }
+    // The case apply is a multi-packet sequence (~1-2s); show a busy cursor.
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    caseController_->applySolid(caseColorButton_->color());
+    QApplication::restoreOverrideCursor();
+    currentSettings().save(Profiles::current());  // persist into the active profile
+}
+
+void MainWindow::onCaseOff() {
+    if(!caseController_) {
+        return;
+    }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    caseController_->applyOff();
+    QApplication::restoreOverrideCursor();
+}
+
+void MainWindow::onCaseAvailabilityChanged(bool available) {
+    if(!casePanel_) {
+        return;
+    }
+    casePanel_->setVisible(available);
+    if(available && caseController_) {
+        casePanel_->setToolTip(caseController_->description());
+    }
 }
 
 // --- Autostart / status -----------------------------------------------------
