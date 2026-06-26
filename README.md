@@ -62,10 +62,12 @@ When a controller is detected, the GUI grows a **Case** tab (alongside
 **Keyboard**) with:
 
 - a **whole-case colour** (Apply to All / Off), and
-- a **drag-to-arrange zone canvas**: turn on **Arrange** and drag zones so the
+- a **drag-to-arrange zone canvas** over a stylised **Alienware Aurora R12**
+  case reference: turn on **Arrange** and drag the small zone markers so the
   on-screen layout mirrors your physical case (saved per machine), then turn it
   off to **select and paint** zones. **Identify** lights only the selected zones
-  on the case so you can locate them (zones have no fixed layout).
+  on the case so you can locate them (zones have no fixed layout); hovering a
+  marker enlarges it to show its number.
 
 Whole-case and per-zone choices are saved with each profile and restored at
 login; the zone *arrangement* is saved per machine. The CLI exposes the same

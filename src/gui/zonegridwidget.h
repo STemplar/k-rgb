@@ -32,8 +32,11 @@ public:
     QList<int> selectedZones() const;
     bool       arrangeMode() const { return arrangeMode_; }
 
-    static constexpr int kCols    = 24;  // logical snap columns
-    static constexpr int kMaxRows = 20;
+    // Fine snap grid → small (~quarter-size) markers that fit the window and can
+    // be placed precisely over the case background. Hovering enlarges a marker
+    // so its number stays readable while arranging.
+    static constexpr int kCols    = 96;
+    static constexpr int kMaxRows = 56;
 
 public Q_SLOTS:
     void setArrangeMode(bool on);
@@ -52,9 +55,11 @@ protected:
     void  mousePressEvent(QMouseEvent*) override;
     void  mouseMoveEvent(QMouseEvent*) override;
     void  mouseReleaseEvent(QMouseEvent*) override;
-    QSize sizeHint() const override { return QSize(560, 240); }
+    void  leaveEvent(QEvent*) override;
+    QSize sizeHint() const override { return QSize(640, 360); }
 
 private:
+    void   drawCaseBackground(QPainter& p) const;  // Alienware Aurora R12 schematic
     double cellSize() const;
     QPoint posOf(int zone) const;     // grid (col,row), default if unset
     QRectF rectOf(int zone) const;    // pixel rect
@@ -66,6 +71,7 @@ private:
     QHash<int, QPoint> pos_;
     QSet<int>          selected_;
     bool               arrangeMode_ = false;
+    int                hoveredZone_ = -1;
 
     // interaction state
     bool               dragging_ = false;
