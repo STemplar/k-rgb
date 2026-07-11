@@ -32,6 +32,10 @@
   <url type="bugtracker">https://github.com/BusyBeaverSoftware/k-rgb/issues</url>
   <provides>
     <binary>krgb</binary>
+    <modalias>usb:v04F2p1968*</modalias>
+    <modalias>usb:v04F2p1830*</modalias>
+    <modalias>usb:v187Cp0550*</modalias>
+    <modalias>usb:v187Cp0551*</modalias>
   </provides>
   <developer id="io.github.busybeaversoftware">
     <name>BusyBeaverSoftware</name>

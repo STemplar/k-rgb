@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+#!/usr/bin/make -f
+
+# Build with GUI by default. Override on the command line to build a headless
+# CLI-only package, e.g.:
+#   dpkg-buildpackage -us -uc -DBUILD_GUI=OFF
+BUILD_GUI ?= ON
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DBUILD_GUI=$(BUILD_GUI) \
+		-DCMAKE_BUILD_TYPE=Release
+
+override_dh_auto_build:
+	dh_auto_build
+
+override_dh_auto_install:
+	dh_auto_install --destdir=debian/tmp
+
+override_dh_install:
+	printf '%s\n' \
+		'usr/bin' \
+		'usr/lib/udev/rules.d' \
+		'debian/krgb.1 usr/share/man/man1' \
+		'debian/krgb-cli.1 usr/share/man/man1' \
+		$(if $(filter ON,$(BUILD_GUI)),'usr/share/applications' 'usr/share/metainfo' 'usr/share/icons') \
+		> debian/k-rgb.install
+	dh_install

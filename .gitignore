@@ -3,3 +3,14 @@
 *.user
 __pycache__/
 *.pyc
+build/
+obj-*/
+debian/tmp/
+debian/k-rgb/
+debian/.debhelper/
+debian/*.debhelper.log
+debian/*.substvars
+debian/files
+debian/debhelper-build-stamp
+debian/k-rgb.install
+.pc

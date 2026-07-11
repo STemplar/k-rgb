@@ -1,0 +1,9 @@
+k-rgb (0.3.0) resolute; urgency=low
+
+  * Initial release.
+  * Add CLI tool for keyboard control.
+  * Optional Qt6/KF6 GUI with per-zone and case lighting support.
+  * Desktop integration (icon, .desktop file, AppStream metadata).
+  * Udev rules for hidraw access.
+
+ -- Randy Yates <randyyates@gmail.com>  Sat, 11 Jul 2026 03:45:00 +0000

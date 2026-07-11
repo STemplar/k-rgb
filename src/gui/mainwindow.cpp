@@ -436,6 +436,16 @@ void MainWindow::setupTray() {
                                   i18n("Profiles"));
     rebuildProfilesMenu();
 
+    QAction* refreshAction = menu->addAction(QIcon::fromTheme(QStringLiteral("view-refresh")),
+                                           i18n("Refresh connection"));
+    connect(refreshAction, &QAction::triggered, this, [this] {
+        controller_->refresh();
+        if(caseController_) {
+            caseController_->refresh();
+        }
+        statusBar()->showMessage(i18n("Rescanning for devices…"), 2000);
+    });
+
     menu->addSection(i18n("Quick lighting"));
 
     QAction* offAction = menu->addAction(QIcon::fromTheme(QStringLiteral("system-shutdown")), i18n("Off"));

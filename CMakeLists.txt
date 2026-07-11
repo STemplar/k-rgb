@@ -10,7 +10,7 @@ endif()
 include(GNUInstallDirs)
 
 option(BUILD_GUI "Build the KF6 GUI (requires Qt6 + KF6 dev packages)" OFF)
-set(UDEV_RULES_INSTALL_DIR "/lib/udev/rules.d"
+set(UDEV_RULES_INSTALL_DIR "/usr/lib/udev/rules.d"
     CACHE PATH "Directory to install the udev rule into")
 
 find_package(Threads REQUIRED)
@@ -45,6 +45,8 @@ if(BUILD_GUI)
             DESTINATION ${KDE_INSTALL_METAINFODIR})
     install(FILES packaging/icons/io.github.busybeaversoftware.krgb.svg
             DESTINATION ${KDE_INSTALL_FULL_ICONDIR}/hicolor/scalable/apps)
-    install(FILES packaging/udev/60-alienware-rgb.rules
-            DESTINATION ${UDEV_RULES_INSTALL_DIR})
 endif()
+
+# Udev rules are needed by both the GUI and the CLI, so install them always.
+install(FILES packaging/udev/60-alienware-rgb.rules
+        DESTINATION ${UDEV_RULES_INSTALL_DIR})

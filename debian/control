@@ -1,0 +1,26 @@
+Source: k-rgb
+Section: utils
+Priority: optional
+Maintainer: Randy Yates <randyyates@gmail.com>
+Build-Depends:
+ cmake (>= 3.16),
+ debhelper-compat (= 13),
+ extra-cmake-modules,
+ libkf6coreaddons-dev,
+ libkf6guiaddons-dev,
+ libkf6config-dev,
+ libkf6i18n-dev,
+ libkf6xmlgui-dev,
+ libkf6dbusaddons-dev,
+ libkf6statusnotifieritem-dev,
+ qt6-base-dev
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: k-rgb
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: RGB lighting controller for Alienware AW410K keyboard
+ Control the RGB LED lighting on Dell Alienware AW410K keyboards.
+ Provides a command-line tool and (optionally) a KDE/Qt6 graphical
+ application with per-key, per-zone, and case lighting support.

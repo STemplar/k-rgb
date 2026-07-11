@@ -1,0 +1,75 @@
+.TH KRGB-CLI 1 "2026-07-11" "k-rgb 0.3.0" "User Commands"
+.SH NAME
+krgb-cli \- command-line control of Alienware RGB lighting
+.SH SYNOPSIS
+.B krgb-cli
+.I COMMAND
+[\fIARGS\fR...]
+.SH DESCRIPTION
+.B krgb-cli
+is a command-line tool for controlling the RGB lighting of Alienware
+AW410K/AW510K keyboards and the AW-ELC case controller on Linux.
+.SH KEYBOARD COMMANDS
+.TP
+.B krgb-cli info
+Show detected keyboard model, path, and firmware version.
+.TP
+.B krgb-cli solid R G B
+Set the whole keyboard to a solid colour using direct reports.
+.TP
+.B krgb-cli static R G B
+Set the whole keyboard to a solid colour using the hardware static mode.
+.TP
+.B krgb-cli off
+Turn keyboard lighting off.
+.TP
+.B krgb-cli spectrum
+Activate the hardware rainbow-spectrum effect.
+.TP
+.B krgb-cli breathing R G B
+Activate the hardware breathing effect.
+.TP
+.B krgb-cli wave R G B
+Activate the hardware single-colour wave effect.
+.TP
+.B krgb-cli rainbow
+Set a per-key static rainbow.
+.TP
+.B krgb-cli key LABEL R G B
+Light a single key; turn all other keys off.
+.TP
+.B krgb-cli perkey K=R,G,B ...
+Set listed keys to colours; other keys are turned off.
+.TP
+.B krgb-cli perkey-file FILE
+Read "KEY R G B" or "KEY=#RRGGBB" lines from FILE (use - for stdin).
+.SH CASE COMMANDS
+.TP
+.B krgb-cli case info
+Show case controller path, firmware, and zone count.
+.TP
+.B krgb-cli case solid R G B
+Set all case zones to a solid colour.
+.TP
+.B krgb-cli case zone N R G B
+Light only zone N.
+.TP
+.B krgb-cli case rainbow
+Set a per-zone rainbow to reveal zone layout.
+.TP
+.B krgb-cli case off
+Turn case lighting off.
+.TP
+.B krgb-cli case reset
+Reset the case controller.
+.SH COLOUR FORMAT
+Colours can be given as three decimal channel values (R G B, each 0-255),
+as a single hex string (#RRGGBB), or as KEY=#RRGGBB for per-key input.
+.SH FILES
+.TP
+.I /usr/lib/udev/rules.d/60-alienware-rgb.rules
+Udev rule granting the logged-in desktop user access to the devices.
+.SH AUTHOR
+Randy Yates <randyyates@gmail.com>
+.SH SEE ALSO
+.BR krgb (1)

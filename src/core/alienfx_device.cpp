@@ -128,6 +128,12 @@ bool AlienFXDevice::openPath(const std::string& path, std::string* err) {
         if(err) {
             *err = "open " + path + ": " + std::strerror(errno) +
                    " (install packaging/udev/60-alienware-rgb.rules, or run as root)";
+            if(errno == EACCES || errno == EPERM) {
+                *err += "\nThe udev rule only takes effect for devices connected after installation."
+                        "\nFix: unplug and reconnect the device, or run:\n"
+                        "  sudo udevadm control --reload-rules && "
+                        "sudo udevadm trigger --subsystem-match=hidraw";
+            }
         }
         return false;
     }

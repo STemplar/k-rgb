@@ -1,0 +1,38 @@
+.TH KRGB 1 "2026-07-11" "k-rgb 0.3.0" "User Commands"
+.SH NAME
+krgb \- control RGB lighting on Alienware AW410K/AW510K keyboards
+.SH SYNOPSIS
+.B krgb
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B krgb
+is a Qt6/KDE graphical application that controls the per-key RGB lighting
+of Alienware AW410K and AW510K keyboards on Linux.
+.PP
+It talks directly to the keyboard over hidraw, requires no vendor software,
+and provides profiles, hardware effects, a per-key colour editor, and a
+system-tray quick switcher.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Display help and exit.
+.TP
+.BR \-v ", " \-\-version
+Display version information and exit.
+.TP
+.B \-\-tray
+Start hidden in the system tray.
+.TP
+.B \-\-apply
+Apply the current profile and then exit (useful for autostart).
+.SH FILES
+.TP
+.I $HOME/.config/krgbrc
+User settings and profiles.
+.TP
+.I /usr/lib/udev/rules.d/60-alienware-rgb.rules
+Udev rule granting the logged-in desktop user access to the keyboard.
+.SH AUTHOR
+Randy Yates <randyyates@gmail.com>
+.SH SEE ALSO
+.BR krgb-cli (1)

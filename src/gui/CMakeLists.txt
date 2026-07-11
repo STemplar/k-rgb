@@ -4,7 +4,6 @@ find_package(KF6 REQUIRED COMPONENTS
     I18n
     WidgetsAddons
     Config
-    ConfigWidgets
     XmlGui
     DBusAddons
     StatusNotifierItem
@@ -32,7 +31,6 @@ target_link_libraries(krgb PRIVATE
     KF6::I18n
     KF6::WidgetsAddons
     KF6::ConfigGui
-    KF6::ConfigWidgets
     KF6::XmlGui
     KF6::DBusAddons
     KF6::StatusNotifierItem
