@@ -338,8 +338,15 @@ int runLightMount(const std::vector<std::string>& a) {
             return 2;
         }
 
-        if(!lamp.setAutonomousMode(false) ||
-           !lamp.setRange(first, last, r, g, b, 255)) {
+        if(!lamp.setAutonomousMode(false)) {
+            std::fprintf(stderr, "error: failed to disable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        const bool ok = (sub == "lamp")
+            ? lamp.setLamp(first, r, g, b, 255)
+            : lamp.setRange(first, last, r, g, b, 255);
+        if(!ok) {
             std::fprintf(stderr, "error: LampArray write failed\n");
             return 1;
         }
