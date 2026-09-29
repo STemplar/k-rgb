@@ -5,6 +5,7 @@
 #include "core/keymap.h"
 #include "core/hid_lamp_array_device.h"
 #include "core/lightmount_device.h"
+#include "core/lightmount_keymap.h"
 
 #include <chrono>
 #include <cmath>
@@ -50,6 +51,16 @@ bool findKeyIdx(const std::string& name, std::uint8_t& idx) {
     for(std::size_t i = 0; i < kKeyCount; ++i) {
         if(strcasecmp(kKeyMap[i].name, name.c_str()) == 0) {
             idx = kKeyMap[i].idx;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool findLightMountKey(const std::string& name, std::uint16_t& ledId) {
+    for(const auto& key : lightmount::kKeys) {
+        if(strcasecmp(key.name, name.c_str()) == 0) {
+            ledId = key.ledId;
             return true;
         }
     }
@@ -177,6 +188,7 @@ void usage() {
         "  krgb-cli lightmount lamp ID R G B\n"
         "  krgb-cli lightmount lamp-range START END R G B\n"
         "  krgb-cli lightmount autonomous on|off\n"
+        "  krgb-cli lightmount key LABEL R G B\n"
         "  krgb-cli lightmount vendor-led ID R G B\n"
         "  krgb-cli lightmount vendor-scan START END DELAY_MS\n");
 }
@@ -388,6 +400,89 @@ int runLightMount(const std::vector<std::string>& a) {
             }
         }
 
+        return 0;
+    }
+
+    if(sub == "key") {
+        if(a.size() != 6) {
+            usage();
+            return 2;
+        }
+
+        std::uint16_t target = 0;
+        if(!findLightMountKey(a[2], target)) {
+            std::fprintf(stderr, "error: unknown Light Mount key label: %s\n", a[2].c_str());
+            return 2;
+        }
+
+        auto parseChannel = [](const std::string& value, std::uint8_t& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < 0 || parsed > 255) {
+                return false;
+            }
+            out = static_cast<std::uint8_t>(parsed);
+            return true;
+        };
+
+        std::uint8_t r, g, b;
+        if(!parseChannel(a[3], r) ||
+           !parseChannel(a[4], g) ||
+           !parseChannel(a[5], b)) {
+            std::fprintf(stderr, "error: RGB values must be within 0..255\n");
+            return 2;
+        }
+
+        // Vendor Custom and LampArray host-control are mutually exclusive.
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!dev.setCustomMode()) {
+            std::fprintf(stderr, "error: failed to select Light Mount Custom mode\n");
+            return 1;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        std::vector<LightMountLedColor> leds;
+        leds.reserve(LightMountDevice::kLedsPerPacket);
+        leds.push_back({target, r, g, b});
+
+        // The validated short vendor packet contains exactly five records.
+        // Use known topbar LEDs as harmless black filler records.
+        for(std::uint16_t filler = 40;
+            filler <= 44 && leds.size() < LightMountDevice::kLedsPerPacket;
+            ++filler) {
+            leds.push_back({filler, 0, 0, 0});
+        }
+
+        if(!dev.setLeds(leds)) {
+            std::fprintf(stderr, "error: Light Mount key RGB write failed\n");
+            return 1;
+        }
+
+        std::printf("Light Mount key %s (vendor LED %u) -> %u,%u,%u\n",
+                    a[2].c_str(),
+                    static_cast<unsigned>(target),
+                    static_cast<unsigned>(r),
+                    static_cast<unsigned>(g),
+                    static_cast<unsigned>(b));
         return 0;
     }
 
