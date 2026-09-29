@@ -13,6 +13,9 @@ inline constexpr std::uint16_t kTopBarFirst = 0;
 inline constexpr std::uint16_t kTopBarLast = 44;
 inline constexpr std::size_t kTopBarCount = 45;       // left -> right
 
+// Illuminated volume rotary/push control. The media function itself is fixed.
+inline constexpr std::uint16_t kMediaKnobLed = 45;
+
 inline constexpr std::uint16_t kLeftStripFirst = 158;
 inline constexpr std::uint16_t kLeftStripLast = 162;
 inline constexpr std::size_t kLeftStripCount = 5;     // top -> bottom
