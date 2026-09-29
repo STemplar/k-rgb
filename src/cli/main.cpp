@@ -189,6 +189,7 @@ void usage() {
         "  krgb-cli lightmount lamp-range START END R G B\n"
         "  krgb-cli lightmount autonomous on|off\n"
         "  krgb-cli lightmount solid R G B\n"
+        "  krgb-cli lightmount padding-test LABEL\n"
         "  krgb-cli lightmount key LABEL R G B\n"
         "  krgb-cli lightmount vendor-led ID R G B\n"
         "  krgb-cli lightmount vendor-scan START END DELAY_MS\n");
@@ -457,6 +458,56 @@ int runLightMount(const std::vector<std::string>& a) {
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
+        return 0;
+    }
+
+    if(sub == "padding-test") {
+        if(a.size() != 3) {
+            usage();
+            return 2;
+        }
+
+        std::uint16_t target = 0;
+        if(!findLightMountKey(a[2], target)) {
+            std::fprintf(stderr, "error: unknown Light Mount key label: %s\n", a[2].c_str());
+            return 2;
+        }
+
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        // Establish one Custom-mode session and one full red frame.
+        if(!dev.setSolid(255, 0, 0)) {
+            std::fprintf(stderr, "error: failed to set red Light Mount frame\n");
+            return 1;
+        }
+
+        // Do not call setCustomMode() again. This isolates setLeds() padding:
+        // the requested key should become blue while every other RGB element
+        // remains red.
+        if(!dev.setLeds({{target, 0, 0, 255}})) {
+            std::fprintf(stderr, "error: Light Mount padding test write failed\n");
+            return 1;
+        }
+
+        std::printf("Light Mount padding test: %s (vendor LED %u) blue, all others red\n",
+                    a[2].c_str(), static_cast<unsigned>(target));
         return 0;
     }
 
