@@ -363,7 +363,7 @@ bool LightMountDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) 
         leds.push_back({id, r, g, b});
     }
 
-    leds.push_back({lightmount::kMediaKnobLed, r, g, b});
+    leds.push_back({lightmount::k3DMediaWheelLed, r, g, b});
 
     for(const auto& key : lightmount::kKeys) {
         leds.push_back({key.ledId, r, g, b});
