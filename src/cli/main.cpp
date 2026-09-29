@@ -1,5 +1,4 @@
-// krgb-cli — exercises the AW410K core engine on real hardware.
-// Mirrors tools/aw410k.py so the C++ port can be validated against it.
+// krgb-cli — command-line control and hardware diagnostics for supported RGB devices.
 #include "core/aw410k_device.h"
 #include "core/alienfx_device.h"
 #include "core/keymap.h"
@@ -184,9 +183,9 @@ bool loadPerKeyFile(const std::string& path, std::vector<KeyColor>& out) {
     return true;
 }
 
-void usage() {
+void usageAw410k() {
     std::printf(
-        "krgb-cli — Alienware AW410K RGB control\n"
+        "Alienware AW410K:\n"
         "  krgb-cli info\n"
         "  krgb-cli solid R G B          whole keyboard, direct\n"
         "  krgb-cli static R G B         whole keyboard, hardware static\n"
@@ -197,35 +196,70 @@ void usage() {
         "  krgb-cli rainbow              per-key static rainbow\n"
         "  krgb-cli key LABEL R G B      light one key (others off)\n"
         "  krgb-cli perkey K=R,G,B ...   set listed keys (others off)\n"
-        "                                colour is R,G,B or #RRGGBB\n"
-        "  krgb-cli perkey-file FILE     read 'KEY R G B' lines (- = stdin)\n"
-        "  --- case / chassis LEDs (Alienware AW-ELC controller) ---\n"
+        "  krgb-cli perkey-file FILE     read 'KEY R G B' lines (- = stdin)\n");
+}
+
+void usageCase() {
+    std::printf(
+        "Alienware AW-ELC case controller:\n"
         "  krgb-cli case info\n"
-        "  krgb-cli case solid R G B     all case zones\n"
-        "  krgb-cli case zone N R G B    light zone N only (others off)\n"
-        "  krgb-cli case rainbow         per-zone rainbow (reveals zone layout)\n"
+        "  krgb-cli case solid R G B\n"
+        "  krgb-cli case zone N R G B\n"
+        "  krgb-cli case rainbow\n"
         "  krgb-cli case off\n"
-        "  krgb-cli case reset\n"
-        "  --- be quiet! Light Mount ---\n"
+        "  krgb-cli case reset\n");
+}
+
+void usageLightMountGeneral() {
+    std::printf(
+        "Light Mount General firmware effects:\n"
+        "  krgb-cli lightmount general static R G B BRIGHTNESS\n"
+        "  krgb-cli lightmount general wave single DIR BRIGHTNESS SPEED R G B\n"
+        "  krgb-cli lightmount general wave dual DIR BRIGHTNESS SPEED R1 G1 B1 R2 G2 B2\n"
+        "  krgb-cli lightmount general wave gradient DIR BRIGHTNESS SPEED R,G,B@POS ...\n"
+        "  krgb-cli lightmount general tornado clockwise|counter-clockwise BRIGHTNESS SPEED\n"
+        "  krgb-cli lightmount general breathing BRIGHTNESS SPEED\n"
+        "  krgb-cli lightmount general reactive BRIGHTNESS SPEED R1 G1 B1 R2 G2 B2\n"
+        "  krgb-cli lightmount general matrix DIR BRIGHTNESS SPEED\n"
+        "  brightness/speed: 10..100; DIR: up|down|left|right\n"
+        "  gradient: 2..7 ordered stops, endpoints at 0 and 100\n");
+}
+
+void usageLightMount() {
+    std::printf(
+        "be quiet! Light Mount:\n"
         "  krgb-cli lightmount info\n"
-        "  krgb-cli lightmount accent-test   top red, left green, right blue\n"
-        "  krgb-cli lightmount keys-red      whole LampArray interface red\n"
-        "  krgb-cli lightmount lamp ID R G B\n"
-        "  krgb-cli lightmount lamp-range START END R G B\n"
-        "  krgb-cli lightmount autonomous on|off\n"
-        "  krgb-cli lightmount general-static R G B BRIGHTNESS\n"
-        "  krgb-cli lightmount general-wave DIR BRIGHTNESS SPEED R G B\n"
-        "  krgb-cli lightmount general-wave-dual DIR BRIGHTNESS SPEED R1 G1 B1 R2 G2 B2\n"
-        "  krgb-cli lightmount general-wave-gradient DIR BRIGHTNESS SPEED R,G,B@POS ...\n"
-        "  krgb-cli lightmount general-tornado clockwise|counter-clockwise BRIGHTNESS SPEED\n"
-        "  krgb-cli lightmount general-breathing BRIGHTNESS SPEED\n"
-        "  krgb-cli lightmount general-reactive BRIGHTNESS SPEED R1 G1 B1 R2 G2 B2\n"
-        "  krgb-cli lightmount general-matrix DIR BRIGHTNESS SPEED\n"
-        "  krgb-cli lightmount solid R G B\n"
-        "  krgb-cli lightmount padding-test LABEL\n"
-        "  krgb-cli lightmount key LABEL R G B\n"
-        "  krgb-cli lightmount vendor-led ID R G B\n"
-        "  krgb-cli lightmount vendor-scan START END DELAY_MS\n");
+        "  krgb-cli lightmount mode off|general|custom\n"
+        "\n"
+        "LampArray (standard HID):\n"
+        "  krgb-cli lightmount lamparray autonomous on|off\n"
+        "  krgb-cli lightmount lamparray solid R G B\n"
+        "  krgb-cli lightmount lamparray lamp ID R G B\n"
+        "  krgb-cli lightmount lamparray range START END R G B\n"
+        "\n"
+        "Custom vendor RGB:\n"
+        "  krgb-cli lightmount custom solid R G B\n"
+        "  krgb-cli lightmount custom key LABEL R G B\n"
+        "  krgb-cli lightmount custom led ID R G B\n"
+        "\n");
+    usageLightMountGeneral();
+    std::printf(
+        "\nDiagnostics:\n"
+        "  krgb-cli lightmount diagnostic accent-test\n"
+        "  krgb-cli lightmount diagnostic padding-test LABEL\n"
+        "  krgb-cli lightmount diagnostic keys-red\n"
+        "  krgb-cli lightmount diagnostic vendor-scan START END DELAY_MS\n");
+}
+
+void usage() {
+    std::printf(
+        "krgb-cli — RGB device control\n"
+        "\n");
+    usageAw410k();
+    std::printf("\n");
+    usageCase();
+    std::printf("\n");
+    usageLightMount();
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -283,7 +317,7 @@ int runCase(const std::vector<std::string>& a) {
     } else if(sub == "reset") {
         ok = dev.reset();
     } else {
-        usage();
+        usageCase();
         return 2;
     }
     if(!ok) {
@@ -295,6 +329,160 @@ int runCase(const std::vector<std::string>& a) {
 
 
 int runLightMount(const std::vector<std::string>& a) {
+    // Preferred hierarchical command syntax. Translate to the existing
+    // validated command handlers so legacy development aliases keep working.
+    if(a.size() > 1 && a[1] == "general") {
+        if(a.size() < 3) {
+            usageLightMountGeneral();
+            return 2;
+        }
+
+        std::vector<std::string> legacy{"lightmount"};
+        if(a[2] == "static") {
+            legacy.push_back("general-static");
+            legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        } else if(a[2] == "wave") {
+            if(a.size() < 4) {
+                usageLightMountGeneral();
+                return 2;
+            }
+            if(a[3] == "single") {
+                legacy.push_back("general-wave");
+            } else if(a[3] == "dual") {
+                legacy.push_back("general-wave-dual");
+            } else if(a[3] == "gradient") {
+                legacy.push_back("general-wave-gradient");
+            } else {
+                usageLightMountGeneral();
+                return 2;
+            }
+            legacy.insert(legacy.end(), a.begin() + 4, a.end());
+        } else if(a[2] == "tornado") {
+            legacy.push_back("general-tornado");
+            legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        } else if(a[2] == "breathing") {
+            legacy.push_back("general-breathing");
+            legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        } else if(a[2] == "reactive") {
+            legacy.push_back("general-reactive");
+            legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        } else if(a[2] == "matrix") {
+            legacy.push_back("general-matrix");
+            legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        } else {
+            usageLightMountGeneral();
+            return 2;
+        }
+        return runLightMount(legacy);
+    }
+
+    if(a.size() > 1 && a[1] == "lamparray") {
+        if(a.size() < 3) {
+            usageLightMount();
+            return 2;
+        }
+        std::vector<std::string> legacy{"lightmount"};
+        if(a[2] == "autonomous") {
+            legacy.push_back("autonomous");
+        } else if(a[2] == "solid") {
+            legacy.push_back("lamp-solid");
+        } else if(a[2] == "lamp") {
+            legacy.push_back("lamp");
+        } else if(a[2] == "range") {
+            legacy.push_back("lamp-range");
+        } else {
+            usageLightMount();
+            return 2;
+        }
+        legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        return runLightMount(legacy);
+    }
+
+    if(a.size() > 1 && a[1] == "custom") {
+        if(a.size() < 3) {
+            usageLightMount();
+            return 2;
+        }
+        std::vector<std::string> legacy{"lightmount"};
+        if(a[2] == "solid") {
+            legacy.push_back("solid");
+        } else if(a[2] == "key") {
+            legacy.push_back("key");
+        } else if(a[2] == "led") {
+            legacy.push_back("vendor-led");
+        } else {
+            usageLightMount();
+            return 2;
+        }
+        legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        return runLightMount(legacy);
+    }
+
+    if(a.size() > 1 && a[1] == "diagnostic") {
+        if(a.size() < 3) {
+            usageLightMount();
+            return 2;
+        }
+        std::vector<std::string> legacy{"lightmount"};
+        if(a[2] == "accent-test") {
+            legacy.push_back("accent-test");
+        } else if(a[2] == "padding-test") {
+            legacy.push_back("padding-test");
+        } else if(a[2] == "keys-red") {
+            legacy.push_back("keys-red");
+        } else if(a[2] == "vendor-scan") {
+            legacy.push_back("vendor-scan");
+        } else {
+            usageLightMount();
+            return 2;
+        }
+        legacy.insert(legacy.end(), a.begin() + 3, a.end());
+        return runLightMount(legacy);
+    }
+
+    if(a.size() > 1 && a[1] == "mode") {
+        if(a.size() != 3) {
+            usageLightMount();
+            return 2;
+        }
+
+        LightMountLightingMode mode;
+        if(a[2] == "off") {
+            mode = LightMountLightingMode::Off;
+        } else if(a[2] == "general") {
+            mode = LightMountLightingMode::General;
+        } else if(a[2] == "custom") {
+            mode = LightMountLightingMode::Custom;
+        } else {
+            usageLightMount();
+            return 2;
+        }
+
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!dev.setLightingMode(mode)) {
+            std::fprintf(stderr, "error: failed to set Light Mount lighting mode\n");
+            return 1;
+        }
+        return 0;
+    }
+
     const std::string sub = a.size() > 1 ? a[1] : std::string();
 
     if(sub == "info") {
@@ -920,7 +1108,7 @@ int runLightMount(const std::vector<std::string>& a) {
         return 0;
     }
 
-    if(sub == "keys-red" || sub == "lamp" || sub == "lamp-range") {
+    if(sub == "keys-red" || sub == "lamp-solid" || sub == "lamp" || sub == "lamp-range") {
         auto parseNumber = [](const std::string& value, long min, long max, long& out) {
             char* end = nullptr;
             errno = 0;
@@ -937,7 +1125,22 @@ int runLightMount(const std::vector<std::string>& a) {
         std::uint16_t last = 0;
         std::uint8_t r = 255, g = 0, b = 0;
 
-        if(sub == "lamp") {
+        if(sub == "lamp-solid") {
+            if(a.size() != 5) {
+                usageLightMount();
+                return 2;
+            }
+            long rr, gg, bb;
+            if(!parseNumber(a[2], 0, 255, rr) ||
+               !parseNumber(a[3], 0, 255, gg) ||
+               !parseNumber(a[4], 0, 255, bb)) {
+                std::fprintf(stderr, "error: invalid RGB value\n");
+                return 2;
+            }
+            r = static_cast<std::uint8_t>(rr);
+            g = static_cast<std::uint8_t>(gg);
+            b = static_cast<std::uint8_t>(bb);
+        } else if(sub == "lamp") {
             if(a.size() != 6) {
                 usage();
                 return 2;
@@ -993,8 +1196,11 @@ int runLightMount(const std::vector<std::string>& a) {
         std::printf("Light Mount LampArray : %s\n", lamp.path().c_str());
         std::printf("lamps                 : %u\n", attrs.lampCount);
 
-        if(sub == "keys-red") {
-            if(!lamp.setSolid(255, 0, 0, 255)) {
+        if(sub == "keys-red" || sub == "lamp-solid") {
+            const std::uint8_t solidR = sub == "keys-red" ? 255 : r;
+            const std::uint8_t solidG = sub == "keys-red" ? 0 : g;
+            const std::uint8_t solidB = sub == "keys-red" ? 0 : b;
+            if(!lamp.setSolid(solidR, solidG, solidB, 255)) {
                 std::fprintf(stderr, "error: LampArray write failed\n");
                 return 1;
             }
@@ -1023,7 +1229,7 @@ int runLightMount(const std::vector<std::string>& a) {
     }
 
     if(sub != "accent-test") {
-        usage();
+        usageLightMount();
         return 2;
     }
 
