@@ -171,7 +171,9 @@ void usage() {
         "  --- be quiet! Light Mount ---\n"
         "  krgb-cli lightmount info\n"
         "  krgb-cli lightmount accent-test   top red, left green, right blue\n"
-        "  krgb-cli lightmount keys-red      LampArray interface red\n");
+        "  krgb-cli lightmount keys-red      whole LampArray interface red\n"
+        "  krgb-cli lightmount lamp ID R G B\n"
+        "  krgb-cli lightmount lamp-range START END R G B\n");
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -249,7 +251,61 @@ int runLightMount(const std::vector<std::string>& a) {
         return p.empty() ? 1 : 0;
     }
 
-    if(sub == "keys-red") {
+    if(sub == "keys-red" || sub == "lamp" || sub == "lamp-range") {
+        auto parseNumber = [](const std::string& value, long min, long max, long& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < min || parsed > max) {
+                return false;
+            }
+            out = parsed;
+            return true;
+        };
+
+        std::uint16_t first = 0;
+        std::uint16_t last = 0;
+        std::uint8_t r = 255, g = 0, b = 0;
+
+        if(sub == "lamp") {
+            if(a.size() != 6) {
+                usage();
+                return 2;
+            }
+            long id, rr, gg, bb;
+            if(!parseNumber(a[2], 0, 65535, id) ||
+               !parseNumber(a[3], 0, 255, rr) ||
+               !parseNumber(a[4], 0, 255, gg) ||
+               !parseNumber(a[5], 0, 255, bb)) {
+                std::fprintf(stderr, "error: invalid lamp ID or RGB value\n");
+                return 2;
+            }
+            first = last = static_cast<std::uint16_t>(id);
+            r = static_cast<std::uint8_t>(rr);
+            g = static_cast<std::uint8_t>(gg);
+            b = static_cast<std::uint8_t>(bb);
+        } else if(sub == "lamp-range") {
+            if(a.size() != 7) {
+                usage();
+                return 2;
+            }
+            long start, end, rr, gg, bb;
+            if(!parseNumber(a[2], 0, 65535, start) ||
+               !parseNumber(a[3], 0, 65535, end) ||
+               !parseNumber(a[4], 0, 255, rr) ||
+               !parseNumber(a[5], 0, 255, gg) ||
+               !parseNumber(a[6], 0, 255, bb)) {
+                std::fprintf(stderr, "error: invalid lamp range or RGB value\n");
+                return 2;
+            }
+            first = static_cast<std::uint16_t>(start);
+            last = static_cast<std::uint16_t>(end);
+            r = static_cast<std::uint8_t>(rr);
+            g = static_cast<std::uint8_t>(gg);
+            b = static_cast<std::uint8_t>(bb);
+        }
+
         HIDLampArrayDevice lamp;
         std::string err;
         if(!lamp.open(LightMountDevice::kVendorId,
@@ -268,7 +324,22 @@ int runLightMount(const std::vector<std::string>& a) {
         std::printf("Light Mount LampArray : %s\n", lamp.path().c_str());
         std::printf("lamps                 : %u\n", attrs.lampCount);
 
-        if(!lamp.setSolid(255, 0, 0, 255)) {
+        if(sub == "keys-red") {
+            if(!lamp.setSolid(255, 0, 0, 255)) {
+                std::fprintf(stderr, "error: LampArray write failed\n");
+                return 1;
+            }
+            return 0;
+        }
+
+        if(first > last || last >= attrs.lampCount) {
+            std::fprintf(stderr, "error: lamp range must be within 0..%u\n",
+                         attrs.lampCount ? attrs.lampCount - 1 : 0);
+            return 2;
+        }
+
+        if(!lamp.setAutonomousMode(false) ||
+           !lamp.setRange(first, last, r, g, b, 255)) {
             std::fprintf(stderr, "error: LampArray write failed\n");
             return 1;
         }
