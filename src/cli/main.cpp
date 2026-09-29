@@ -188,6 +188,7 @@ void usage() {
         "  krgb-cli lightmount lamp ID R G B\n"
         "  krgb-cli lightmount lamp-range START END R G B\n"
         "  krgb-cli lightmount autonomous on|off\n"
+        "  krgb-cli lightmount solid R G B\n"
         "  krgb-cli lightmount key LABEL R G B\n"
         "  krgb-cli lightmount vendor-led ID R G B\n"
         "  krgb-cli lightmount vendor-scan START END DELAY_MS\n");
@@ -400,6 +401,62 @@ int runLightMount(const std::vector<std::string>& a) {
             }
         }
 
+        return 0;
+    }
+
+    if(sub == "solid") {
+        if(a.size() != 5) {
+            usage();
+            return 2;
+        }
+
+        auto parseChannel = [](const std::string& value, std::uint8_t& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < 0 || parsed > 255) {
+                return false;
+            }
+            out = static_cast<std::uint8_t>(parsed);
+            return true;
+        };
+
+        std::uint8_t r, g, b;
+        if(!parseChannel(a[2], r) ||
+           !parseChannel(a[3], g) ||
+           !parseChannel(a[4], b)) {
+            std::fprintf(stderr, "error: RGB values must be within 0..255\n");
+            return 2;
+        }
+
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!dev.setSolid(r, g, b)) {
+            std::fprintf(stderr, "error: Light Mount solid vendor write failed\n");
+            return 1;
+        }
+
+        std::printf("Light Mount solid -> %u,%u,%u\n",
+                    static_cast<unsigned>(r),
+                    static_cast<unsigned>(g),
+                    static_cast<unsigned>(b));
         return 0;
     }
 
