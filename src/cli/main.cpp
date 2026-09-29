@@ -173,7 +173,8 @@ void usage() {
         "  krgb-cli lightmount accent-test   top red, left green, right blue\n"
         "  krgb-cli lightmount keys-red      whole LampArray interface red\n"
         "  krgb-cli lightmount lamp ID R G B\n"
-        "  krgb-cli lightmount lamp-range START END R G B\n");
+        "  krgb-cli lightmount lamp-range START END R G B\n"
+        "  krgb-cli lightmount autonomous on|off\n");
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -249,6 +250,31 @@ int runLightMount(const std::vector<std::string>& a) {
         const std::string p = LightMountDevice::findDevicePath();
         std::printf("Light Mount vendor HID : %s\n", p.empty() ? "NOT FOUND" : p.c_str());
         return p.empty() ? 1 : 0;
+    }
+
+    if(sub == "autonomous") {
+        if(a.size() != 3 || (a[2] != "on" && a[2] != "off")) {
+            usage();
+            return 2;
+        }
+
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        const bool enabled = a[2] == "on";
+        if(!lamp.setAutonomousMode(enabled)) {
+            std::fprintf(stderr, "error: failed to set LampArray autonomous mode\n");
+            return 1;
+        }
+
+        std::printf("LampArray autonomous mode: %s\n", enabled ? "on" : "off");
+        return 0;
     }
 
     if(sub == "keys-red" || sub == "lamp" || sub == "lamp-range") {
