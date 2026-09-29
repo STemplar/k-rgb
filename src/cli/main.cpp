@@ -3,6 +3,7 @@
 #include "core/aw410k_device.h"
 #include "core/alienfx_device.h"
 #include "core/keymap.h"
+#include "core/hid_lamp_array_device.h"
 #include "core/lightmount_device.h"
 
 #include <cmath>
@@ -169,7 +170,8 @@ void usage() {
         "  krgb-cli case reset\n"
         "  --- be quiet! Light Mount ---\n"
         "  krgb-cli lightmount info\n"
-        "  krgb-cli lightmount accent-test   top red, left green, right blue\n");
+        "  krgb-cli lightmount accent-test   top red, left green, right blue\n"
+        "  krgb-cli lightmount keys-red      LampArray interface red\n");
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -245,6 +247,32 @@ int runLightMount(const std::vector<std::string>& a) {
         const std::string p = LightMountDevice::findDevicePath();
         std::printf("Light Mount vendor HID : %s\n", p.empty() ? "NOT FOUND" : p.c_str());
         return p.empty() ? 1 : 0;
+    }
+
+    if(sub == "keys-red") {
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        HIDLampArrayAttributes attrs;
+        if(!lamp.getAttributes(attrs)) {
+            std::fprintf(stderr, "error: failed to read LampArray attributes\n");
+            return 1;
+        }
+
+        std::printf("Light Mount LampArray : %s\n", lamp.path().c_str());
+        std::printf("lamps                 : %u\n", attrs.lampCount);
+
+        if(!lamp.setSolid(255, 0, 0, 255)) {
+            std::fprintf(stderr, "error: LampArray write failed\n");
+            return 1;
+        }
+        return 0;
     }
 
     if(sub != "accent-test") {
