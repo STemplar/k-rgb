@@ -177,7 +177,8 @@ void usage() {
         "  krgb-cli lightmount lamp ID R G B\n"
         "  krgb-cli lightmount lamp-range START END R G B\n"
         "  krgb-cli lightmount autonomous on|off\n"
-        "  krgb-cli lightmount vendor-led ID R G B\n");
+        "  krgb-cli lightmount vendor-led ID R G B\n"
+        "  krgb-cli lightmount vendor-scan START END DELAY_MS\n");
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -277,6 +278,116 @@ int runLightMount(const std::vector<std::string>& a) {
         }
 
         std::printf("LampArray autonomous mode: %s\n", enabled ? "on" : "off");
+        return 0;
+    }
+
+    if(sub == "vendor-scan") {
+        if(a.size() != 5) {
+            usage();
+            return 2;
+        }
+
+        auto parseNumber = [](const std::string& value, long min, long max, long& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < min || parsed > max) {
+                return false;
+            }
+            out = parsed;
+            return true;
+        };
+
+        long startValue, endValue, delayMs;
+        if(!parseNumber(a[2], 0, 65535, startValue) ||
+           !parseNumber(a[3], 0, 65535, endValue) ||
+           !parseNumber(a[4], 50, 10000, delayMs) ||
+           startValue > endValue) {
+            std::fprintf(stderr, "error: invalid vendor scan range or delay (50..10000 ms)\n");
+            return 2;
+        }
+
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!dev.setCustomMode()) {
+            std::fprintf(stderr, "error: failed to select Light Mount Custom mode\n");
+            return 1;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        bool havePrevious = false;
+        std::uint16_t previous = 0;
+
+        for(long idValue = startValue; idValue <= endValue; ++idValue) {
+            const std::uint16_t current = static_cast<std::uint16_t>(idValue);
+            std::vector<LightMountLedColor> leds;
+            leds.reserve(LightMountDevice::kLedsPerPacket);
+
+            // White makes the active LED easy to identify. Turn the previous
+            // scan LED off in the same packet so only one tested ID remains on.
+            leds.push_back({current, 255, 255, 255});
+            if(havePrevious && previous != current) {
+                leds.push_back({previous, 0, 0, 0});
+            }
+
+            // Fill the validated five-record packet with known topbar IDs off.
+            for(std::uint16_t filler = 0;
+                filler <= 44 && leds.size() < LightMountDevice::kLedsPerPacket;
+                ++filler) {
+                if(filler != current && (!havePrevious || filler != previous)) {
+                    leds.push_back({filler, 0, 0, 0});
+                }
+            }
+
+            if(leds.size() != LightMountDevice::kLedsPerPacket ||
+               !dev.setLeds(leds)) {
+                std::fprintf(stderr, "error: vendor scan write failed at ID %u\n",
+                             static_cast<unsigned>(current));
+                return 1;
+            }
+
+            std::printf("vendor LED %u\n", static_cast<unsigned>(current));
+            std::fflush(stdout);
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+
+            previous = current;
+            havePrevious = true;
+        }
+
+        // Leave the final scanned LED off when the scan completes.
+        if(havePrevious) {
+            std::vector<LightMountLedColor> leds;
+            leds.reserve(LightMountDevice::kLedsPerPacket);
+            leds.push_back({previous, 0, 0, 0});
+            for(std::uint16_t filler = 0;
+                filler <= 44 && leds.size() < LightMountDevice::kLedsPerPacket;
+                ++filler) {
+                if(filler != previous) {
+                    leds.push_back({filler, 0, 0, 0});
+                }
+            }
+            if(leds.size() == LightMountDevice::kLedsPerPacket) {
+                dev.setLeds(leds);
+            }
+        }
+
         return 0;
     }
 
