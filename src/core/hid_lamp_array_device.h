@@ -1,7 +1,7 @@
 // HIDLampArrayDevice — generic Linux hidraw helper for HID LampArray devices.
 //
 // Implements the standard Lighting and Illumination Usage Page (0x59)
-// LampArray feature reports needed for host control and uniform range updates.
+// LampArray feature reports needed for host control, individual updates, and range updates.
 // Device discovery is parameterized by VID/PID/interface so callers are not
 // tied to unstable /dev/hidrawN numbering.
 #pragma once
@@ -27,10 +27,13 @@ public:
     // HID LampArray implementations. A future descriptor parser can make
     // these fully dynamic without changing the public API.
     static constexpr std::uint8_t kAttributesReportId = 0x01;
+    static constexpr std::uint8_t kMultiUpdateReportId = 0x04;
     static constexpr std::uint8_t kRangeUpdateReportId = 0x05;
     static constexpr std::uint8_t kControlReportId = 0x06;
 
     static constexpr std::size_t kAttributesReportLen = 23;
+    static constexpr std::size_t kMultiUpdateReportLen = 51;
+    static constexpr std::size_t kMultiUpdateSlots = 8;
     static constexpr std::size_t kRangeUpdateReportLen = 10;
     static constexpr std::size_t kControlReportLen = 2;
 
@@ -54,6 +57,11 @@ public:
 
     bool getAttributes(HIDLampArrayAttributes& attrs);
     bool setAutonomousMode(bool enabled);
+
+    // LampMultiUpdate: set exactly one lamp without touching the others.
+    bool setLamp(std::uint16_t lampId,
+                 std::uint8_t r, std::uint8_t g, std::uint8_t b,
+                 std::uint8_t intensity = 255);
 
     // LampRangeUpdate: set a contiguous range to one RGBI value.
     bool setRange(std::uint16_t firstLamp, std::uint16_t lastLamp,
