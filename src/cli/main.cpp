@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace krgb;
@@ -119,10 +120,11 @@ bool parseLightMountGradientStop(const std::string& spec, LightMountGradientStop
         return false;
     }
 
+    const std::string positionSpec = spec.substr(at + 1);
     char* end = nullptr;
     errno = 0;
-    const long position = std::strtol(spec.substr(at + 1).c_str(), &end, 0);
-    if(end == spec.c_str() + at + 1 || *end != '\0' || errno != 0 ||
+    const long position = std::strtol(positionSpec.c_str(), &end, 0);
+    if(end == positionSpec.c_str() || *end != '\0' || errno != 0 ||
        position < 0 || position > 100) {
         return false;
     }
