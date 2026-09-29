@@ -105,7 +105,7 @@ public:
     // repeating its final record with the same colour.
     bool setLeds(const std::vector<LightMountLedColor>& leds);
 
-    // Set every known physical RGB element: topbar, knob, keys and side strips.
+    // Set every known physical RGB element: topbar, 3D Media Wheel, keys and side strips.
     bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
     // Convenience operation for the 55 physically validated accent LEDs.
