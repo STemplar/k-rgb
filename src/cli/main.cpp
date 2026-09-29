@@ -3,6 +3,7 @@
 #include "core/aw410k_device.h"
 #include "core/alienfx_device.h"
 #include "core/keymap.h"
+#include "core/lightmount_device.h"
 
 #include <cmath>
 #include <cstdint>
@@ -165,7 +166,10 @@ void usage() {
         "  krgb-cli case zone N R G B    light zone N only (others off)\n"
         "  krgb-cli case rainbow         per-zone rainbow (reveals zone layout)\n"
         "  krgb-cli case off\n"
-        "  krgb-cli case reset\n");
+        "  krgb-cli case reset\n"
+        "  --- be quiet! Light Mount ---\n"
+        "  krgb-cli lightmount info\n"
+        "  krgb-cli lightmount accent-test   top red, left green, right blue\n");
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -233,6 +237,40 @@ int runCase(const std::vector<std::string>& a) {
     return 0;
 }
 
+
+int runLightMount(const std::vector<std::string>& a) {
+    const std::string sub = a.size() > 1 ? a[1] : std::string();
+
+    if(sub == "info") {
+        const std::string p = LightMountDevice::findDevicePath();
+        std::printf("Light Mount vendor HID : %s\n", p.empty() ? "NOT FOUND" : p.c_str());
+        return p.empty() ? 1 : 0;
+    }
+
+    if(sub != "accent-test") {
+        usage();
+        return 2;
+    }
+
+    LightMountDevice dev;
+    std::string err;
+    if(!dev.open(&err)) {
+        std::fprintf(stderr, "error: %s\n", err.c_str());
+        return 1;
+    }
+
+    // Physically validated mapping:
+    // top bar = red, left strip = green, right strip = blue.
+    if(!dev.setAccentSolid(255, 0, 0,
+                           0, 255, 0,
+                           0, 0, 255)) {
+        std::fprintf(stderr, "error: Light Mount vendor write failed\n");
+        return 1;
+    }
+
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -245,6 +283,10 @@ int main(int argc, char** argv) {
 
     if(cmd == "case") {
         return runCase(a);
+    }
+
+    if(cmd == "lightmount") {
+        return runLightMount(a);
     }
 
     if(cmd == "info") {
