@@ -189,13 +189,108 @@ bool LightMountDevice::writePacket(Report& packet) {
     return n == static_cast<ssize_t>(packet.size());
 }
 
-bool LightMountDevice::setCustomMode() {
+bool LightMountDevice::setLightingMode(LightMountLightingMode mode) {
     Report packet{};
     packet[0] = 0x07;
     packet[2] = 0x01;
     packet[5] = 0x10;
     packet[6] = 0x02;
-    packet[7] = 0x03;
+    packet[7] = static_cast<std::uint8_t>(mode);
+    return writePacket(packet);
+}
+
+bool LightMountDevice::setCustomMode() {
+    return setLightingMode(LightMountLightingMode::Custom);
+}
+
+bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
+    if(effect.brightness < 10 || effect.brightness > 100 ||
+       effect.speed < 10 || effect.speed > 100) {
+        return false;
+    }
+
+    const auto direction = static_cast<std::uint8_t>(effect.direction);
+    switch(effect.effect) {
+        case LightMountEffect::ColorWave:
+        case LightMountEffect::Matrix:
+            if(direction > static_cast<std::uint8_t>(LightMountDirection::Right)) {
+                return false;
+            }
+            break;
+        case LightMountEffect::Tornado:
+            if(effect.direction != LightMountDirection::Clockwise &&
+               effect.direction != LightMountDirection::CounterClockwise) {
+                return false;
+            }
+            break;
+        case LightMountEffect::Static:
+        case LightMountEffect::Breathing:
+        case LightMountEffect::Reactive:
+            break;
+    }
+
+    if(effect.effect == LightMountEffect::Static &&
+       effect.colorMode != LightMountColorMode::Single) {
+        return false;
+    }
+    if(effect.effect == LightMountEffect::Matrix &&
+       effect.colorMode == LightMountColorMode::Single) {
+        return false;
+    }
+
+    if(effect.colorMode == LightMountColorMode::Gradient) {
+        if(effect.gradient.size() < 2 || effect.gradient.size() > 7 ||
+           effect.gradient.front().position != 0 ||
+           effect.gradient.back().position != 100) {
+            return false;
+        }
+        for(std::size_t i = 0; i < effect.gradient.size(); ++i) {
+            if(effect.gradient[i].position > 100 ||
+               (i > 0 && effect.gradient[i - 1].position >= effect.gradient[i].position)) {
+                return false;
+            }
+        }
+    }
+
+    Report packet{};
+    packet[2] = 0x01;
+    packet[5] = 0x10;
+    packet[6] = 0x06;
+    packet[7] = 0x00; // Reserved/unknown in every captured IO Center packet.
+    packet[8] = static_cast<std::uint8_t>(effect.effect);
+    packet[9] = direction;
+    packet[10] = effect.brightness;
+    packet[11] = effect.speed;
+    packet[12] = static_cast<std::uint8_t>(effect.colorMode);
+
+    std::size_t end = 12;
+    if(effect.colorMode == LightMountColorMode::Single) {
+        packet[13] = effect.color1.r;
+        packet[14] = effect.color1.g;
+        packet[15] = effect.color1.b;
+        end = 15;
+    } else if(effect.colorMode == LightMountColorMode::Dual) {
+        packet[13] = effect.color1.r;
+        packet[14] = effect.color1.g;
+        packet[15] = effect.color1.b;
+        packet[16] = effect.color2.r;
+        packet[17] = effect.color2.g;
+        packet[18] = effect.color2.b;
+        end = 18;
+    } else {
+        packet[13] = static_cast<std::uint8_t>(effect.gradient.size());
+        std::size_t offset = 14;
+        for(const auto& stop : effect.gradient) {
+            packet[offset++] = stop.r;
+            packet[offset++] = stop.g;
+            packet[offset++] = stop.b;
+            packet[offset++] = stop.position;
+        }
+        end = offset - 1;
+    }
+
+    // IO Center stores the last occupied packet byte index in byte 0.
+    packet[0] = static_cast<std::uint8_t>(end);
     return writePacket(packet);
 }
 
