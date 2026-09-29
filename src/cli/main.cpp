@@ -517,19 +517,10 @@ int runLightMount(const std::vector<std::string>& a) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        std::vector<LightMountLedColor> leds;
-        leds.reserve(LightMountDevice::kLedsPerPacket);
-        leds.push_back({target, r, g, b});
-
-        // The validated short vendor packet contains exactly five records.
-        // Use known topbar LEDs as harmless black filler records.
-        for(std::uint16_t filler = 40;
-            filler <= 44 && leds.size() < LightMountDevice::kLedsPerPacket;
-            ++filler) {
-            leds.push_back({filler, 0, 0, 0});
-        }
-
-        if(!dev.setLeds(leds)) {
+        // Pass a single logical update. setLeds() pads the validated
+        // five-record vendor packet by repeating this record, so this also
+        // exercises the short-final-packet path on real hardware.
+        if(!dev.setLeds({{target, r, g, b}})) {
             std::fprintf(stderr, "error: Light Mount key RGB write failed\n");
             return 1;
         }
