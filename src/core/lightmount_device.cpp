@@ -1,6 +1,7 @@
 #include "core/lightmount_device.h"
 
 #include "core/lightmount_map.h"
+#include "core/lightmount_keymap.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -225,18 +226,66 @@ bool LightMountDevice::sendFiveLeds(const LightMountLedColor* leds) {
 }
 
 bool LightMountDevice::setLeds(const std::vector<LightMountLedColor>& leds) {
-    if(leds.empty() || leds.size() % kLedsPerPacket != 0) {
+    if(leds.empty()) {
         return false;
     }
 
     for(std::size_t i = 0; i < leds.size(); i += kLedsPerPacket) {
-        if(!sendFiveLeds(&leds[i])) {
-            return false;
+        const std::size_t remaining = leds.size() - i;
+        if(remaining >= kLedsPerPacket) {
+            if(!sendFiveLeds(&leds[i])) {
+                return false;
+            }
+        } else {
+            std::array<LightMountLedColor, kLedsPerPacket> packetLeds{};
+            for(std::size_t j = 0; j < remaining; ++j) {
+                packetLeds[j] = leds[i + j];
+            }
+
+            // The protocol has no validated "record count" field. Repeat the
+            // last requested record to fill the packet without changing any
+            // unrelated LED state.
+            for(std::size_t j = remaining; j < kLedsPerPacket; ++j) {
+                packetLeds[j] = packetLeds[remaining - 1];
+            }
+
+            if(!sendFiveLeds(packetLeds.data())) {
+                return false;
+            }
         }
         sleepMs(10);
     }
 
     return true;
+}
+
+bool LightMountDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    std::vector<LightMountLedColor> leds;
+    leds.reserve(lightmount::kTopBarCount + 1 + lightmount::kKeyCount +
+                 lightmount::kLeftStripCount + lightmount::kRightStripCount);
+
+    for(std::uint16_t id = lightmount::kTopBarFirst; id <= lightmount::kTopBarLast; ++id) {
+        leds.push_back({id, r, g, b});
+    }
+
+    leds.push_back({lightmount::kMediaKnobLed, r, g, b});
+
+    for(const auto& key : lightmount::kKeys) {
+        leds.push_back({key.ledId, r, g, b});
+    }
+
+    for(std::uint16_t id = lightmount::kLeftStripFirst; id <= lightmount::kLeftStripLast; ++id) {
+        leds.push_back({id, r, g, b});
+    }
+    for(std::uint16_t id = lightmount::kRightStripFirst; id <= lightmount::kRightStripLast; ++id) {
+        leds.push_back({id, r, g, b});
+    }
+
+    if(!setCustomMode()) {
+        return false;
+    }
+    sleepMs(100);
+    return setLeds(leds);
 }
 
 bool LightMountDevice::setAccentSolid(
