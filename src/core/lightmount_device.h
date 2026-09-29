@@ -18,6 +18,56 @@ struct LightMountLedColor {
     std::uint8_t r, g, b;
 };
 
+struct LightMountColor {
+    std::uint8_t r, g, b;
+};
+
+struct LightMountGradientStop {
+    std::uint8_t r, g, b;
+    std::uint8_t position; // 0..100
+};
+
+enum class LightMountLightingMode : std::uint8_t {
+    Off     = 0x00,
+    General = 0x01,
+    Custom  = 0x03,
+};
+
+enum class LightMountEffect : std::uint8_t {
+    Static    = 0x00,
+    ColorWave = 0x01,
+    Tornado   = 0x02,
+    Breathing = 0x03,
+    Reactive  = 0x04,
+    Matrix    = 0x05,
+};
+
+enum class LightMountDirection : std::uint8_t {
+    Up               = 0x00,
+    Down             = 0x01,
+    Left             = 0x02,
+    Right            = 0x03,
+    Clockwise        = 0x04,
+    CounterClockwise = 0x05,
+};
+
+enum class LightMountColorMode : std::uint8_t {
+    Single   = 0x00,
+    Dual     = 0x01,
+    Gradient = 0x02,
+};
+
+struct LightMountGeneralEffect {
+    LightMountEffect effect = LightMountEffect::Static;
+    LightMountDirection direction = LightMountDirection::Up;
+    std::uint8_t brightness = 40; // IO Center range: 10..100
+    std::uint8_t speed = 50;      // IO Center range: 10..100
+    LightMountColorMode colorMode = LightMountColorMode::Single;
+    LightMountColor color1{0xe6, 0x30, 0x00};
+    LightMountColor color2{0xff, 0xff, 0xff};
+    std::vector<LightMountGradientStop> gradient;
+};
+
 class LightMountDevice {
 public:
     static constexpr std::uint16_t kVendorId = 0x373f;
@@ -40,8 +90,15 @@ public:
     bool isOpen() const { return fd_ >= 0; }
     const std::string& path() const { return path_; }
 
+    // Select the firmware lighting state used by IO Center.
+    bool setLightingMode(LightMountLightingMode mode);
+
     // Switch the keyboard to the IO Center "Custom" lighting mode.
     bool setCustomMode();
+
+    // Configure a firmware-driven IO Center "General" effect (command 0x10/0x06).
+    // Gradient mode supports 2..7 ordered stops; endpoints must be 0 and 100.
+    bool setGeneralEffect(const LightMountGeneralEffect& effect);
 
     // Write one or more Custom RGB records. The transport itself always
     // carries five records per packet; a short final group is padded by
