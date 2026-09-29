@@ -19,6 +19,7 @@ find_package(Threads REQUIRED)
 add_library(krgb-core STATIC
     src/core/aw410k_device.cpp
     src/core/lightmount_device.cpp
+    src/core/hid_lamp_array_device.cpp
     src/core/alienfx_device.cpp
 )
 target_include_directories(krgb-core PUBLIC src)
