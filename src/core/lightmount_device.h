@@ -43,10 +43,13 @@ public:
     // Switch the keyboard to the IO Center "Custom" lighting mode.
     bool setCustomMode();
 
-    // Write Custom RGB records. The currently validated transport encodes
-    // exactly five LEDs per 64-byte packet, so the list size must be a
-    // non-zero multiple of five.
+    // Write one or more Custom RGB records. The transport itself always
+    // carries five records per packet; a short final group is padded by
+    // repeating its final record with the same colour.
     bool setLeds(const std::vector<LightMountLedColor>& leds);
+
+    // Set every known physical RGB element: topbar, knob, keys and side strips.
+    bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b);
 
     // Convenience operation for the 55 physically validated accent LEDs.
     bool setAccentSolid(std::uint8_t topR, std::uint8_t topG, std::uint8_t topB,
