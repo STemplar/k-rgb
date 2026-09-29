@@ -18,6 +18,7 @@ find_package(Threads REQUIRED)
 # --- Core engine: pure C++ + Linux hidraw, no Qt/KF6 dependency -------------
 add_library(krgb-core STATIC
     src/core/aw410k_device.cpp
+    src/core/lightmount_device.cpp
     src/core/alienfx_device.cpp
 )
 target_include_directories(krgb-core PUBLIC src)

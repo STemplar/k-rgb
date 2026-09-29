@@ -1,0 +1,68 @@
+// LightMountDevice — low-level vendor HID driver for the be quiet! Light Mount.
+//
+// The keyboard exposes several HID interfaces. This backend talks to the
+// vendor-defined interface 2 (usage page 0xFF00) through /dev/hidrawN.
+// It implements the Custom RGB path reverse-engineered from be quiet! IO Center.
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace krgb {
+
+struct LightMountLedColor {
+    std::uint16_t id;
+    std::uint8_t r, g, b;
+};
+
+class LightMountDevice {
+public:
+    static constexpr std::uint16_t kVendorId = 0x373f;
+    static constexpr std::uint16_t kProductId = 0x0002;
+    static constexpr int kVendorInterface = 2;
+    static constexpr std::size_t kReportLen = 64;
+    static constexpr std::size_t kLedsPerPacket = 5;
+
+    LightMountDevice() = default;
+    ~LightMountDevice();
+    LightMountDevice(const LightMountDevice&) = delete;
+    LightMountDevice& operator=(const LightMountDevice&) = delete;
+
+    // Locate the vendor hidraw interface; "" when no Light Mount is present.
+    static std::string findDevicePath();
+
+    bool open(std::string* err = nullptr);
+    bool openPath(const std::string& path, std::string* err = nullptr);
+    void close();
+    bool isOpen() const { return fd_ >= 0; }
+    const std::string& path() const { return path_; }
+
+    // Switch the keyboard to the IO Center "Custom" lighting mode.
+    bool setCustomMode();
+
+    // Write Custom RGB records. The currently validated transport encodes
+    // exactly five LEDs per 64-byte packet, so the list size must be a
+    // non-zero multiple of five.
+    bool setLeds(const std::vector<LightMountLedColor>& leds);
+
+    // Convenience operation for the 55 physically validated accent LEDs.
+    bool setAccentSolid(std::uint8_t topR, std::uint8_t topG, std::uint8_t topB,
+                        std::uint8_t leftR, std::uint8_t leftG, std::uint8_t leftB,
+                        std::uint8_t rightR, std::uint8_t rightG, std::uint8_t rightB);
+
+private:
+    using Report = std::array<std::uint8_t, kReportLen>;
+
+    bool writePacket(Report& packet);
+    bool sendFiveLeds(const LightMountLedColor* leds);
+    static std::uint16_t crc16Modbus(const std::uint8_t* data, std::size_t len);
+
+    int fd_ = -1;
+    std::string path_;
+    std::uint8_t sequence_ = 1;
+};
+
+} // namespace krgb
