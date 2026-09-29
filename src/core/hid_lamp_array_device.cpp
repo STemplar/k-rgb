@@ -197,6 +197,28 @@ bool HIDLampArrayDevice::setAutonomousMode(bool enabled) {
     return setFeature(buf, sizeof(buf));
 }
 
+bool HIDLampArrayDevice::setLamp(std::uint16_t lampId,
+                                 std::uint8_t r, std::uint8_t g, std::uint8_t b,
+                                 std::uint8_t intensity) {
+    std::uint8_t buf[kMultiUpdateReportLen]{};
+    buf[0] = kMultiUpdateReportId;
+    buf[1] = 0x01; // LampCount
+    buf[2] = 0x01; // LampUpdateComplete
+
+    // Report 4 layout:
+    // [ReportID, LampCount, Flags, LampIds[8] (u16 LE), RGBI[8] (4 bytes)]
+    buf[3] = static_cast<std::uint8_t>(lampId & 0xff);
+    buf[4] = static_cast<std::uint8_t>((lampId >> 8) & 0xff);
+
+    constexpr std::size_t rgbiStart = 3 + kMultiUpdateSlots * 2;
+    buf[rgbiStart + 0] = r;
+    buf[rgbiStart + 1] = g;
+    buf[rgbiStart + 2] = b;
+    buf[rgbiStart + 3] = intensity;
+
+    return setFeature(buf, sizeof(buf));
+}
+
 bool HIDLampArrayDevice::setRange(std::uint16_t firstLamp, std::uint16_t lastLamp,
                                   std::uint8_t r, std::uint8_t g, std::uint8_t b,
                                   std::uint8_t intensity) {
