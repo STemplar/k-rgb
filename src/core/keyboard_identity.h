@@ -15,8 +15,8 @@ enum class KeyboardModelId : std::uint8_t {
 
 enum class KeyboardBackendId : std::uint8_t {
     Unknown = 0,
-    AlienwareAW410KFamily,
-    BeQuietIOCenterKeyboard,
+    AlienwareAWx10KFamily,
+    BeQuietMountFamily,
 };
 
 struct KeyboardIdentity {
@@ -33,7 +33,7 @@ struct KeyboardIdentity {
 
 inline constexpr KeyboardIdentity kAlienwareAW410KIdentity{
     KeyboardModelId::AlienwareAW410K,
-    KeyboardBackendId::AlienwareAW410KFamily,
+    KeyboardBackendId::AlienwareAWx10KFamily,
     "Alienware",
     "AW410K",
     "Alienware AW410K",
@@ -45,7 +45,7 @@ inline constexpr KeyboardIdentity kAlienwareAW410KIdentity{
 
 inline constexpr KeyboardIdentity kAlienwareAW510KIdentity{
     KeyboardModelId::AlienwareAW510K,
-    KeyboardBackendId::AlienwareAW410KFamily,
+    KeyboardBackendId::AlienwareAWx10KFamily,
     "Alienware",
     "AW510K",
     "Alienware AW510K",
@@ -57,7 +57,7 @@ inline constexpr KeyboardIdentity kAlienwareAW510KIdentity{
 
 inline constexpr KeyboardIdentity kBeQuietLightMountIdentity{
     KeyboardModelId::BeQuietLightMount,
-    KeyboardBackendId::BeQuietIOCenterKeyboard,
+    KeyboardBackendId::BeQuietMountFamily,
     "be quiet!",
     "Light Mount",
     "be quiet! Light Mount",
