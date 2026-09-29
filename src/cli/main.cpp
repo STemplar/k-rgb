@@ -188,6 +188,8 @@ void usage() {
         "  krgb-cli lightmount lamp ID R G B\n"
         "  krgb-cli lightmount lamp-range START END R G B\n"
         "  krgb-cli lightmount autonomous on|off\n"
+        "  krgb-cli lightmount general-static R G B BRIGHTNESS\n"
+        "  krgb-cli lightmount general-wave DIR BRIGHTNESS SPEED R G B\n"
         "  krgb-cli lightmount solid R G B\n"
         "  krgb-cli lightmount padding-test LABEL\n"
         "  krgb-cli lightmount key LABEL R G B\n"
@@ -292,6 +294,111 @@ int runLightMount(const std::vector<std::string>& a) {
         }
 
         std::printf("LampArray autonomous mode: %s\n", enabled ? "on" : "off");
+        return 0;
+    }
+
+    if(sub == "general-static" || sub == "general-wave") {
+        auto parseNumber = [](const std::string& value, long min, long max, long& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < min || parsed > max) {
+                return false;
+            }
+            out = parsed;
+            return true;
+        };
+
+        LightMountGeneralEffect effect;
+        long rr, gg, bb, brightness, speed = 50;
+
+        if(sub == "general-static") {
+            if(a.size() != 6 ||
+               !parseNumber(a[2], 0, 255, rr) ||
+               !parseNumber(a[3], 0, 255, gg) ||
+               !parseNumber(a[4], 0, 255, bb) ||
+               !parseNumber(a[5], 10, 100, brightness)) {
+                std::fprintf(stderr,
+                             "error: usage: lightmount general-static R G B BRIGHTNESS "
+                             "(brightness 10..100)\n");
+                return 2;
+            }
+
+            effect.effect = LightMountEffect::Static;
+            effect.direction = LightMountDirection::Up; // Static ignores direction.
+            effect.brightness = static_cast<std::uint8_t>(brightness);
+            effect.speed = 50; // Captured Static value; ignored by the firmware effect.
+            effect.colorMode = LightMountColorMode::Single;
+            effect.color1 = {static_cast<std::uint8_t>(rr),
+                             static_cast<std::uint8_t>(gg),
+                             static_cast<std::uint8_t>(bb)};
+        } else {
+            if(a.size() != 8 ||
+               !parseNumber(a[3], 10, 100, brightness) ||
+               !parseNumber(a[4], 10, 100, speed) ||
+               !parseNumber(a[5], 0, 255, rr) ||
+               !parseNumber(a[6], 0, 255, gg) ||
+               !parseNumber(a[7], 0, 255, bb)) {
+                std::fprintf(stderr,
+                             "error: usage: lightmount general-wave DIR BRIGHTNESS SPEED R G B "
+                             "(brightness/speed 10..100)\n");
+                return 2;
+            }
+
+            if(strcasecmp(a[2].c_str(), "up") == 0) {
+                effect.direction = LightMountDirection::Up;
+            } else if(strcasecmp(a[2].c_str(), "down") == 0) {
+                effect.direction = LightMountDirection::Down;
+            } else if(strcasecmp(a[2].c_str(), "left") == 0) {
+                effect.direction = LightMountDirection::Left;
+            } else if(strcasecmp(a[2].c_str(), "right") == 0) {
+                effect.direction = LightMountDirection::Right;
+            } else {
+                std::fprintf(stderr, "error: direction must be up, down, left, or right\n");
+                return 2;
+            }
+
+            effect.effect = LightMountEffect::ColorWave;
+            effect.brightness = static_cast<std::uint8_t>(brightness);
+            effect.speed = static_cast<std::uint8_t>(speed);
+            effect.colorMode = LightMountColorMode::Single;
+            effect.color1 = {static_cast<std::uint8_t>(rr),
+                             static_cast<std::uint8_t>(gg),
+                             static_cast<std::uint8_t>(bb)};
+        }
+
+        // General vendor effects require LampArray host-control to be released.
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!dev.setLightingMode(LightMountLightingMode::General)) {
+            std::fprintf(stderr, "error: failed to select Light Mount General mode\n");
+            return 1;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if(!dev.setGeneralEffect(effect)) {
+            std::fprintf(stderr, "error: invalid or failed Light Mount General effect write\n");
+            return 1;
+        }
+
+        std::printf("Light Mount General %s configured\n",
+                    sub == "general-static" ? "Static" : "Color Wave");
         return 0;
     }
 
