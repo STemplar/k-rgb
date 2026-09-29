@@ -6,6 +6,7 @@
 #include "core/hid_lamp_array_device.h"
 #include "core/lightmount_device.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -17,6 +18,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace krgb;
@@ -174,7 +176,8 @@ void usage() {
         "  krgb-cli lightmount keys-red      whole LampArray interface red\n"
         "  krgb-cli lightmount lamp ID R G B\n"
         "  krgb-cli lightmount lamp-range START END R G B\n"
-        "  krgb-cli lightmount autonomous on|off\n");
+        "  krgb-cli lightmount autonomous on|off\n"
+        "  krgb-cli lightmount vendor-led ID R G B\n");
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -274,6 +277,89 @@ int runLightMount(const std::vector<std::string>& a) {
         }
 
         std::printf("LampArray autonomous mode: %s\n", enabled ? "on" : "off");
+        return 0;
+    }
+
+    if(sub == "vendor-led") {
+        if(a.size() != 6) {
+            usage();
+            return 2;
+        }
+
+        auto parseNumber = [](const std::string& value, long min, long max, long& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < min || parsed > max) {
+                return false;
+            }
+            out = parsed;
+            return true;
+        };
+
+        long idValue, rr, gg, bb;
+        if(!parseNumber(a[2], 0, 65535, idValue) ||
+           !parseNumber(a[3], 0, 255, rr) ||
+           !parseNumber(a[4], 0, 255, gg) ||
+           !parseNumber(a[5], 0, 255, bb)) {
+            std::fprintf(stderr, "error: invalid vendor LED ID or RGB value\n");
+            return 2;
+        }
+
+        // Vendor Custom and LampArray host-control are mutually exclusive on
+        // the Light Mount. Return LampArray to autonomous mode before sending
+        // vendor Custom packets.
+        HIDLampArrayDevice lamp;
+        std::string err;
+        if(!lamp.open(LightMountDevice::kVendorId,
+                      LightMountDevice::kProductId,
+                      3, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!lamp.setAutonomousMode(true)) {
+            std::fprintf(stderr, "error: failed to enable LampArray autonomous mode\n");
+            return 1;
+        }
+
+        LightMountDevice dev;
+        if(!dev.open(&err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(!dev.setCustomMode()) {
+            std::fprintf(stderr, "error: failed to select Light Mount Custom mode\n");
+            return 1;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        const std::uint16_t target = static_cast<std::uint16_t>(idValue);
+        std::vector<LightMountLedColor> leds;
+        leds.reserve(LightMountDevice::kLedsPerPacket);
+        leds.push_back({target,
+                        static_cast<std::uint8_t>(rr),
+                        static_cast<std::uint8_t>(gg),
+                        static_cast<std::uint8_t>(bb)});
+
+        // The validated short vendor packet contains exactly five records.
+        // Fill the unused records with distinct, known topbar IDs set to black.
+        for(std::uint16_t filler = 40;
+            filler <= 44 && leds.size() < LightMountDevice::kLedsPerPacket;
+            ++filler) {
+            if(filler != target) {
+                leds.push_back({filler, 0, 0, 0});
+            }
+        }
+
+        if(leds.size() != LightMountDevice::kLedsPerPacket ||
+           !dev.setLeds(leds)) {
+            std::fprintf(stderr, "error: Light Mount vendor LED write failed\n");
+            return 1;
+        }
+
+        std::printf("Light Mount vendor LED %u -> %ld,%ld,%ld\n",
+                    static_cast<unsigned>(target), rr, gg, bb);
         return 0;
     }
 
