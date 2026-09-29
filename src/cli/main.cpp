@@ -5,6 +5,7 @@
 #include "core/keymap.h"
 #include "core/hid_lamp_array_device.h"
 #include "core/lightmount_device.h"
+#include "core/lightmount_effects.h"
 #include "core/lightmount_keymap.h"
 
 #include <chrono>
@@ -361,22 +362,6 @@ int runLightMount(const std::vector<std::string>& a) {
             return true;
         };
 
-        const std::vector<LightMountGradientStop> rainbowGradient = {
-            {255,   0,   0,   0},
-            {255, 255,   0,  17},
-            {  0, 255,   0,  33},
-            {  0, 255, 255,  50},
-            {  0,   0, 255,  67},
-            {255,   0, 255,  83},
-            {255,   0,   0, 100},
-        };
-        const std::vector<LightMountGradientStop> matrixGradient = {
-            {0x0d, 0x02, 0x08,   0},
-            {0x00, 0x3b, 0x00,  33},
-            {0x00, 0x8f, 0x11,  67},
-            {0x00, 0xff, 0x41, 100},
-        };
-
         LightMountGeneralEffect effect;
         long rr = 0, gg = 0, bb = 0, r2 = 0, g2 = 0, b2 = 0;
         long brightness = 100, speed = 50;
@@ -392,14 +377,11 @@ int runLightMount(const std::vector<std::string>& a) {
                              "(brightness 10..100)\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::Static;
-            effect.direction = LightMountDirection::Up;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = 50;
-            effect.colorMode = LightMountColorMode::Single;
-            effect.color1 = {static_cast<std::uint8_t>(rr),
-                             static_cast<std::uint8_t>(gg),
-                             static_cast<std::uint8_t>(bb)};
+            effect = lightmount::makeStaticEffect(
+                {static_cast<std::uint8_t>(rr),
+                 static_cast<std::uint8_t>(gg),
+                 static_cast<std::uint8_t>(bb)},
+                static_cast<std::uint8_t>(brightness));
         } else if(sub == "general-wave" || sub == "general-wave-dual") {
             const bool dual = sub == "general-wave-dual";
             const std::size_t expected = dual ? 11 : 8;
@@ -416,17 +398,25 @@ int runLightMount(const std::vector<std::string>& a) {
                 std::fprintf(stderr, "error: invalid Color Wave arguments\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::ColorWave;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = static_cast<std::uint8_t>(speed);
-            effect.colorMode = dual ? LightMountColorMode::Dual : LightMountColorMode::Single;
-            effect.color1 = {static_cast<std::uint8_t>(rr),
-                             static_cast<std::uint8_t>(gg),
-                             static_cast<std::uint8_t>(bb)};
+            const LightMountColor color1{
+                static_cast<std::uint8_t>(rr),
+                static_cast<std::uint8_t>(gg),
+                static_cast<std::uint8_t>(bb)};
             if(dual) {
-                effect.color2 = {static_cast<std::uint8_t>(r2),
-                                 static_cast<std::uint8_t>(g2),
-                                 static_cast<std::uint8_t>(b2)};
+                effect = lightmount::makeColorWaveDualEffect(
+                    effect.direction,
+                    static_cast<std::uint8_t>(brightness),
+                    static_cast<std::uint8_t>(speed),
+                    color1,
+                    {static_cast<std::uint8_t>(r2),
+                     static_cast<std::uint8_t>(g2),
+                     static_cast<std::uint8_t>(b2)});
+            } else {
+                effect = lightmount::makeColorWaveSingleEffect(
+                    effect.direction,
+                    static_cast<std::uint8_t>(brightness),
+                    static_cast<std::uint8_t>(speed),
+                    color1);
             }
         } else if(sub == "general-wave-gradient") {
             if(a.size() < 7 || a.size() > 12 ||
@@ -438,18 +428,20 @@ int runLightMount(const std::vector<std::string>& a) {
                              "R,G,B@POS ... (2..7 stops)\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::ColorWave;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = static_cast<std::uint8_t>(speed);
-            effect.colorMode = LightMountColorMode::Gradient;
+            std::vector<LightMountGradientStop> gradient;
             for(std::size_t i = 5; i < a.size(); ++i) {
                 LightMountGradientStop stop{};
                 if(!parseLightMountGradientStop(a[i], stop)) {
                     std::fprintf(stderr, "error: invalid gradient stop: %s\n", a[i].c_str());
                     return 2;
                 }
-                effect.gradient.push_back(stop);
+                gradient.push_back(stop);
             }
+            effect = lightmount::makeColorWaveGradientEffect(
+                effect.direction,
+                static_cast<std::uint8_t>(brightness),
+                static_cast<std::uint8_t>(speed),
+                std::move(gradient));
         } else if(sub == "general-tornado") {
             if(a.size() != 5 ||
                !parseNumber(a[3], 10, 100, brightness) ||
@@ -467,11 +459,10 @@ int runLightMount(const std::vector<std::string>& a) {
                 std::fprintf(stderr, "error: Tornado direction must be clockwise or counter-clockwise\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::Tornado;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = static_cast<std::uint8_t>(speed);
-            effect.colorMode = LightMountColorMode::Gradient;
-            effect.gradient = rainbowGradient;
+            effect = lightmount::makeTornadoEffect(
+                effect.direction,
+                static_cast<std::uint8_t>(brightness),
+                static_cast<std::uint8_t>(speed));
         } else if(sub == "general-breathing") {
             if(a.size() != 4 ||
                !parseNumber(a[2], 10, 100, brightness) ||
@@ -480,12 +471,9 @@ int runLightMount(const std::vector<std::string>& a) {
                              "error: usage: lightmount general-breathing BRIGHTNESS SPEED\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::Breathing;
-            effect.direction = LightMountDirection::Up;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = static_cast<std::uint8_t>(speed);
-            effect.colorMode = LightMountColorMode::Gradient;
-            effect.gradient = rainbowGradient;
+            effect = lightmount::makeBreathingEffect(
+                static_cast<std::uint8_t>(brightness),
+                static_cast<std::uint8_t>(speed));
         } else if(sub == "general-reactive") {
             if(a.size() != 10 ||
                !parseNumber(a[2], 10, 100, brightness) ||
@@ -501,17 +489,15 @@ int runLightMount(const std::vector<std::string>& a) {
                              "BRIGHTNESS SPEED R1 G1 B1 R2 G2 B2\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::Reactive;
-            effect.direction = LightMountDirection::Up;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = static_cast<std::uint8_t>(speed);
-            effect.colorMode = LightMountColorMode::Dual;
-            effect.color1 = {static_cast<std::uint8_t>(rr),
-                             static_cast<std::uint8_t>(gg),
-                             static_cast<std::uint8_t>(bb)};
-            effect.color2 = {static_cast<std::uint8_t>(r2),
-                             static_cast<std::uint8_t>(g2),
-                             static_cast<std::uint8_t>(b2)};
+            effect = lightmount::makeReactiveEffect(
+                static_cast<std::uint8_t>(brightness),
+                static_cast<std::uint8_t>(speed),
+                {static_cast<std::uint8_t>(rr),
+                 static_cast<std::uint8_t>(gg),
+                 static_cast<std::uint8_t>(bb)},
+                {static_cast<std::uint8_t>(r2),
+                 static_cast<std::uint8_t>(g2),
+                 static_cast<std::uint8_t>(b2)});
         } else {
             if(a.size() != 5 ||
                !parseFourWayDirection(a[2], effect.direction) ||
@@ -521,11 +507,10 @@ int runLightMount(const std::vector<std::string>& a) {
                              "error: usage: lightmount general-matrix DIR BRIGHTNESS SPEED\n");
                 return 2;
             }
-            effect.effect = LightMountEffect::Matrix;
-            effect.brightness = static_cast<std::uint8_t>(brightness);
-            effect.speed = static_cast<std::uint8_t>(speed);
-            effect.colorMode = LightMountColorMode::Gradient;
-            effect.gradient = matrixGradient;
+            effect = lightmount::makeMatrixEffect(
+                effect.direction,
+                static_cast<std::uint8_t>(brightness),
+                static_cast<std::uint8_t>(speed));
         }
 
         HIDLampArrayDevice lamp;
