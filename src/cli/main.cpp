@@ -213,7 +213,7 @@ std::string logitechHidKeyName(std::uint8_t id) {
         case 0x2f: return "[ / {";
         case 0x30: return "] / }";
         case 0x31: return "\\ / |";
-        case 0x32: return "ISO # / ~ (Non-US #/~)";
+        case 0x32: return "ISO \\ / | (left of Enter)";
         case 0x33: return "; / :";
         case 0x34: return "' / \"";
         case 0x35: return "` / ~";
@@ -242,7 +242,7 @@ std::string logitechHidKeyName(std::uint8_t id) {
         case 0x58: return "Keypad Enter";
         case 0x62: return "Keypad 0";
         case 0x63: return "Keypad .";
-        case 0x64: return "ISO \\ / | (Non-US \\/|)";
+        case 0x64: return "ISO \\ / | (left of Z)";
         case 0x65: return "Application/Menu";
         case 0x66: return "Power";
         case 0x67: return "Keypad =";
