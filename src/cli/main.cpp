@@ -184,6 +184,86 @@ bool loadPerKeyFile(const std::string& path, std::vector<KeyColor>& out) {
     return true;
 }
 
+
+std::string logitechHidKeyName(std::uint8_t id) {
+    if(id >= 0x04 && id <= 0x1d) {
+        return std::string(1, static_cast<char>('A' + (id - 0x04)));
+    }
+    if(id >= 0x1e && id <= 0x26) {
+        return std::string(1, static_cast<char>('1' + (id - 0x1e)));
+    }
+    if(id == 0x27) {
+        return "0";
+    }
+    if(id >= 0x3a && id <= 0x45) {
+        return "F" + std::to_string(static_cast<unsigned>(id - 0x3a + 1));
+    }
+    if(id >= 0x59 && id <= 0x61) {
+        return "Keypad " + std::to_string(static_cast<unsigned>(id - 0x59 + 1));
+    }
+
+    switch(id) {
+        case 0x28: return "Enter";
+        case 0x29: return "Escape";
+        case 0x2a: return "Backspace";
+        case 0x2b: return "Tab";
+        case 0x2c: return "Space";
+        case 0x2d: return "- / _";
+        case 0x2e: return "= / +";
+        case 0x2f: return "[ / {";
+        case 0x30: return "] / }";
+        case 0x31: return "\\ / |";
+        case 0x32: return "ISO # / ~ (Non-US #/~)";
+        case 0x33: return "; / :";
+        case 0x34: return "' / \"";
+        case 0x35: return "` / ~";
+        case 0x36: return ", / <";
+        case 0x37: return ". / >";
+        case 0x38: return "/ / ?";
+        case 0x39: return "Caps Lock";
+        case 0x46: return "Print Screen";
+        case 0x47: return "Scroll Lock";
+        case 0x48: return "Pause/Break";
+        case 0x49: return "Insert";
+        case 0x4a: return "Home";
+        case 0x4b: return "Page Up";
+        case 0x4c: return "Delete";
+        case 0x4d: return "End";
+        case 0x4e: return "Page Down";
+        case 0x4f: return "Arrow Right";
+        case 0x50: return "Arrow Left";
+        case 0x51: return "Arrow Down";
+        case 0x52: return "Arrow Up";
+        case 0x53: return "Num Lock";
+        case 0x54: return "Keypad /";
+        case 0x55: return "Keypad *";
+        case 0x56: return "Keypad -";
+        case 0x57: return "Keypad +";
+        case 0x58: return "Keypad Enter";
+        case 0x62: return "Keypad 0";
+        case 0x63: return "Keypad .";
+        case 0x64: return "ISO \\ / | (Non-US \\/|)";
+        case 0x65: return "Application/Menu";
+        case 0x66: return "Power";
+        case 0x67: return "Keypad =";
+        case 0x87: return "International 1";
+        case 0xe0: return "Left Ctrl";
+        case 0xe1: return "Left Shift";
+        case 0xe2: return "Left Alt";
+        case 0xe3: return "Left GUI/Windows";
+        case 0xe4: return "Right Ctrl";
+        case 0xe5: return "Right Shift";
+        case 0xe6: return "Right Alt/AltGr";
+        case 0xe7: return "Right GUI/Windows";
+        default: break;
+    }
+
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "UNKNOWN (HID 0x%02x)",
+                  static_cast<unsigned>(id));
+    return buf;
+}
+
 void usageAw410k() {
     std::printf(
         "Alienware AW410K:\n"
@@ -216,6 +296,7 @@ void usageLogitech() {
         "Logitech HID++ 2.0:\n"
         "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
+        "  krgb-cli logitech verify-keys interactively verify keyboard IDs against HID names\n"
         "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
         "  krgb-cli logitech indicator NAME R G B\n"
         "    NAME: backlight|game|caps|scroll|num\n");
@@ -344,6 +425,7 @@ int runCase(const std::vector<std::string>& a) {
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
     if(sub != "info" && sub != "perkey-info" &&
+       sub != "verify-keys" &&
        sub != "solid" && sub != "indicator") {
         usageLogitech();
         return 2;
@@ -398,6 +480,131 @@ int runLogitech(const std::vector<std::string>& a) {
                             static_cast<unsigned>(color.b));
             }
         }
+        return 0;
+    }
+
+    if(sub == "verify-keys") {
+        if(a.size() != 2) {
+            usageLogitech();
+            return 2;
+        }
+
+        LogitechHIDPP20PerKeyInfo info;
+        if(!dev.getPerKey8080Info(info, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        constexpr std::uint16_t kKeyboardKeyType = 0x0001;
+        const LogitechHIDPP20PerKeyTypeInfo* keyboard = nullptr;
+        for(const auto& type : info.types) {
+            if(type.keyType == kKeyboardKeyType) {
+                keyboard = &type;
+                break;
+            }
+        }
+        if(!keyboard || keyboard->colors.empty()) {
+            std::fprintf(stderr,
+                         "error: G810 reported no 0x8080 keyboard key IDs\n");
+            return 1;
+        }
+
+        // Start from a known visual state.  Use batches because one 0x12
+        // SetKeyColors report can carry at most 14 key tuples.
+        for(std::size_t start = 0; start < keyboard->colors.size(); start += 14) {
+            std::vector<LogitechHIDPP20KeyColor> off;
+            const std::size_t end =
+                std::min<std::size_t>(start + 14, keyboard->colors.size());
+            off.reserve(end - start);
+            for(std::size_t i = start; i < end; ++i) {
+                off.push_back({keyboard->colors[i].keyId, 0, 0, 0});
+            }
+            if(!dev.setPerKey8080Colors(kKeyboardKeyType, off, &err)) {
+                std::fprintf(stderr, "error: cannot clear keyboard LEDs: %s\n",
+                             err.c_str());
+                return 1;
+            }
+        }
+
+        std::printf(
+            "G810 key verifier: %zu discovered keyboard IDs "
+            "(device reports %u).\n"
+            "Each candidate is lit RED. Check the physical key against the "
+            "console name.\n"
+            "Enter=next, r=repeat, q=quit.\n\n",
+            keyboard->colors.size(),
+            static_cast<unsigned>(keyboard->keyCount));
+
+        std::uint8_t activeId = 0;
+        bool haveActive = false;
+        std::string input;
+
+        for(std::size_t i = 0; i < keyboard->colors.size(); ++i) {
+            const std::uint8_t keyId = keyboard->colors[i].keyId;
+
+            if(haveActive) {
+                if(!dev.setPerKey8080Color(kKeyboardKeyType, activeId,
+                                           0, 0, 0, &err)) {
+                    std::fprintf(stderr, "error: cannot clear id 0x%02x: %s\n",
+                                 static_cast<unsigned>(activeId), err.c_str());
+                    return 1;
+                }
+            }
+
+            if(!dev.setPerKey8080Color(kKeyboardKeyType, keyId,
+                                       255, 0, 0, &err)) {
+                std::fprintf(stderr, "error: cannot light id 0x%02x: %s\n",
+                             static_cast<unsigned>(keyId), err.c_str());
+                return 1;
+            }
+            activeId = keyId;
+            haveActive = true;
+
+            for(;;) {
+                const std::string name = logitechHidKeyName(keyId);
+                std::printf("[%3zu/%3zu] id 0x%02x -> %-30s  > ",
+                            i + 1, keyboard->colors.size(),
+                            static_cast<unsigned>(keyId), name.c_str());
+                std::fflush(stdout);
+
+                if(!std::getline(std::cin, input)) {
+                    input = "q";
+                }
+                if(input.empty()) {
+                    break;
+                }
+                if(input == "q" || input == "Q") {
+                    if(haveActive) {
+                        dev.setPerKey8080Color(kKeyboardKeyType, activeId,
+                                               0, 0, 0, nullptr);
+                    }
+                    std::printf("Stopped at id 0x%02x.\n",
+                                static_cast<unsigned>(keyId));
+                    return 0;
+                }
+                if(input == "r" || input == "R") {
+                    if(!dev.setPerKey8080Color(kKeyboardKeyType, keyId,
+                                               255, 0, 0, &err)) {
+                        std::fprintf(stderr,
+                                     "error: cannot relight id 0x%02x: %s\n",
+                                     static_cast<unsigned>(keyId), err.c_str());
+                        return 1;
+                    }
+                    continue;
+                }
+                std::printf("Use Enter, r, or q.\n");
+            }
+        }
+
+        if(haveActive) {
+            if(!dev.setPerKey8080Color(kKeyboardKeyType, activeId,
+                                       0, 0, 0, &err)) {
+                std::fprintf(stderr, "warning: cannot clear final key: %s\n",
+                             err.c_str());
+            }
+        }
+
+        std::printf("Verification sequence complete.\n");
         return 0;
     }
 
