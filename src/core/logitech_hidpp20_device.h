@@ -20,6 +20,16 @@ struct LogitechHIDPP20FeatureInfo {
     std::uint8_t version = 0;
 };
 
+struct LogitechHIDPP20FirmwareInfo {
+    std::uint8_t entity = 0;
+    std::uint8_t kind = 0xff; // 0=firmware, 1=bootloader, 2=hardware
+    std::string name;
+    std::uint8_t major = 0;
+    std::uint8_t minor = 0;
+    std::uint16_t build = 0;
+    std::vector<std::uint8_t> extra;
+};
+
 struct LogitechHIDPP20KeyColor {
     std::uint8_t keyId = 0;
     std::uint8_t r = 0;
@@ -55,6 +65,7 @@ public:
 
     static constexpr std::uint16_t kFeatureRoot = 0x0000;
     static constexpr std::uint16_t kFeatureSet = 0x0001;
+    static constexpr std::uint16_t kFeatureDeviceInformation = 0x0003;
     static constexpr std::uint16_t kFeatureColorLedEffects = 0x8070;
     static constexpr std::uint16_t kFeatureRgbEffects = 0x8071;
     static constexpr std::uint16_t kFeaturePerKeyLighting = 0x8080;
@@ -86,6 +97,11 @@ public:
     // failure. A successful call with info.index == 0 means unsupported.
     bool getFeature(std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
                     std::string* err = nullptr);
+
+    // HID++ 2.0 feature 0x0003 (Device Information). Reads all reported
+    // firmware/hardware entities such as main firmware and bootloader.
+    bool getFirmwareInfo(std::vector<LogitechHIDPP20FirmwareInfo>& firmware,
+                         std::string* err = nullptr);
 
     // Read the 0x8080 Per Key Lighting topology and current volatile RGB
     // buffer. This is read-only and lets model code build a key map from the
