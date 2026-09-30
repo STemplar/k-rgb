@@ -247,6 +247,37 @@ bool LogitechHIDPP20Device::requestLong(
     return false;
 }
 
+bool LogitechHIDPP20Device::writeVeryLong(
+    std::uint8_t featureIndex, std::uint8_t function,
+    const std::uint8_t* params, std::size_t paramCount,
+    std::string* err) {
+
+    if(fd_ < 0 || paramCount > 60) {
+        if(err) {
+            *err = "invalid HID++ very-long request";
+        }
+        return false;
+    }
+
+    VeryLongReport request{};
+    request[0] = kVeryLongReportId;
+    request[1] = kDefaultDeviceIndex;
+    request[2] = featureIndex;
+    request[3] = static_cast<std::uint8_t>((function << 4) | kSoftwareId);
+    for(std::size_t i = 0; i < paramCount; ++i) {
+        request[4 + i] = params[i];
+    }
+
+    const ssize_t written = ::write(fd_, request.data(), request.size());
+    if(written != static_cast<ssize_t>(request.size())) {
+        if(err) {
+            *err = "HID++ very-long write failed: " + std::string(std::strerror(errno));
+        }
+        return false;
+    }
+    return true;
+}
+
 bool LogitechHIDPP20Device::getProtocolVersion(
     std::uint8_t& major, std::uint8_t& minor, std::string* err) {
 
@@ -363,6 +394,43 @@ bool LogitechHIDPP20Device::setSolid(
         if(!requestLong(fx.index, 0x03, params, sizeof(params), response, err)) {
             return false;
         }
+    }
+
+    return true;
+}
+
+bool LogitechHIDPP20Device::setPerKey8080Color(
+    std::uint16_t keyType, std::uint8_t keyId,
+    std::uint8_t r, std::uint8_t g, std::uint8_t b,
+    std::string* err) {
+
+    LogitechHIDPP20FeatureInfo perKey;
+    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+        return false;
+    }
+    if(perKey.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8080 (Per Key Lighting) is not supported";
+        }
+        return false;
+    }
+
+    // Function 3: SetKeyColors. Payload is keyType (BE16), count (BE16),
+    // then (keyId, R, G, B) tuples. The G810 uses a 0x12 64-byte report.
+    std::uint8_t payload[8] = {
+        static_cast<std::uint8_t>(keyType >> 8),
+        static_cast<std::uint8_t>(keyType & 0xff),
+        0x00, 0x01,
+        keyId, r, g, b,
+    };
+    if(!writeVeryLong(perKey.index, 0x03, payload, sizeof(payload), err)) {
+        return false;
+    }
+
+    // Function 5: FlushLEDs. Empty long request commits the staged colors.
+    LongReport response{};
+    if(!requestLong(perKey.index, 0x05, nullptr, 0, response, err)) {
+        return false;
     }
 
     return true;
