@@ -37,6 +37,8 @@ small, fast, and dependency-light.
 | --- | --- | --- | --- |
 | Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | ✅ |
 | Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | ✅* |
+| Logitech G610 Orion | `046d:c333` / `046d:c338` | 1 (HID++ 2.0) | ✅† |
+| Logitech G810 Orion Spectrum | `046d:c331` / `046d:c337` | 1 (HID++ 2.0) | ✅ |
 
 k-rgb **auto-detects** which model is plugged in and names it in the window and
 `krgb-cli info`. Both share the same lighting protocol and LED index map (the
@@ -49,6 +51,11 @@ Alienware drivers and hasn't yet been confirmed on physical AW510K hardware —
 reports welcome. Detection covers only models in the table; an unknown keyboard
 can't be assumed compatible because the protocol is reverse-engineered per
 model. Contributions for other Alienware devices are welcome.
+
+† G610 support is derived from Logitech Gaming Software resources. G610 and
+G810 share the physical key/media/control address scheme; the G610 has white
+LEDs, so k-rgb collapses RGB input to a single intensity value. The G610 path
+has not yet been verified on physical G610 hardware.
 
 ### Case / chassis lighting (experimental)
 
