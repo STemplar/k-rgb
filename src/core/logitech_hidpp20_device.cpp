@@ -649,6 +649,107 @@ bool LogitechHIDPP20Device::getPerKey8080Info(
     return true;
 }
 
+bool LogitechHIDPP20Device::getColorLed8070ZoneCount(
+    std::uint8_t& zoneCount, std::string* err) {
+
+    zoneCount = 0;
+
+    LogitechHIDPP20FeatureInfo fx;
+    if(!getFeature(kFeatureColorLedEffects, fx, err)) {
+        return false;
+    }
+    if(fx.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        }
+        return false;
+    }
+
+    LongReport response{};
+    if(!requestLong(fx.index, 0x00, nullptr, 0, response, err)) {
+        return false;
+    }
+
+    zoneCount = response[4];
+    if(zoneCount == 0) {
+        if(err) {
+            *err = "HID++ 0x8070 reported zero lighting zones";
+        }
+        return false;
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::setColorLed8070Zones(
+    const std::vector<LogitechHIDPP20ZoneColor>& colors,
+    std::string* err) {
+
+    if(colors.empty()) {
+        if(err) {
+            *err = "HID++ 0x8070 zone color list is empty";
+        }
+        return false;
+    }
+
+    LogitechHIDPP20FeatureInfo fx;
+    if(!getFeature(kFeatureColorLedEffects, fx, err)) {
+        return false;
+    }
+    if(fx.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        }
+        return false;
+    }
+
+    std::uint8_t zoneCount = 0;
+    if(!getColorLed8070ZoneCount(zoneCount, err)) {
+        return false;
+    }
+
+    std::uint8_t addressBase = 0;
+    if(const auto* known = logitechKnownDeviceForProductId(productId())) {
+        addressBase = known->colorLed8070ZoneAddressBase;
+    }
+
+    for(const auto& item : colors) {
+        if(item.zone >= zoneCount) {
+            if(err) {
+                *err = "HID++ 0x8070 logical zone " +
+                       std::to_string(static_cast<unsigned>(item.zone)) +
+                       " is outside the device-reported range";
+            }
+            return false;
+        }
+
+        std::uint8_t r = item.r;
+        std::uint8_t g = item.g;
+        std::uint8_t b = item.b;
+        normalizeLightingColor(r, g, b);
+
+        // 0x8070 SetZoneEffect (function 3):
+        //   zone, mode=fixed/on (0x01), RGB, effect=0, remaining effect data.
+        // G213 captures independently show exactly this fixed-color payload,
+        // with physical region IDs 1..5 rather than the usual zero-based
+        // zone indices. The runtime feature index is still discovered.
+        std::uint8_t params[16]{};
+        params[0] = static_cast<std::uint8_t>(item.zone + addressBase);
+        params[1] = 0x01;
+        params[2] = r;
+        params[3] = g;
+        params[4] = b;
+        params[5] = 0x00;
+        params[12] = 0x00; // volatile/RAM; do not write onboard flash
+
+        LongReport response{};
+        if(!requestLong(fx.index, 0x03, params, sizeof(params), response, err)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool LogitechHIDPP20Device::setSolid(
     std::uint8_t r, std::uint8_t g, std::uint8_t b, std::string* err) {
 
@@ -662,83 +763,18 @@ bool LogitechHIDPP20Device::setSolid(
     bool wroteLighting = false;
 
     if(features.colorLedEffects8070.index != 0) {
-        const auto& fx = features.colorLedEffects8070;
-
-        // 0x8070 function 0: GetInfo. On this feature generation byte 0 is the
-        // number of firmware lighting zones.
-        LongReport infoResponse{};
-        if(!requestLong(fx.index, 0x00, nullptr, 0, infoResponse, err)) {
-            return false;
-        }
-        const std::uint8_t zoneCount = infoResponse[4];
-        if(zoneCount == 0) {
-            if(err) {
-                *err = "HID++ 0x8070 reported zero lighting zones";
-            }
+        std::uint8_t zoneCount = 0;
+        if(!getColorLed8070ZoneCount(zoneCount, err)) {
             return false;
         }
 
-        // Discover a static-color effect for every reported zone.
-        std::vector<std::uint8_t> staticEffectIndex(zoneCount, 0xff);
+        std::vector<LogitechHIDPP20ZoneColor> zones;
+        zones.reserve(zoneCount);
         for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
-            const std::uint8_t zoneQuery[2] = {zone, 0x00};
-            LongReport zoneResponse{};
-            if(!requestLong(fx.index, 0x01, zoneQuery, sizeof(zoneQuery),
-                            zoneResponse, err)) {
-                return false;
-            }
-
-            const std::uint8_t effectCount = zoneResponse[7];
-            for(std::uint8_t effect = 0; effect < effectCount; ++effect) {
-                const std::uint8_t effectQuery[4] = {zone, effect, 0x00, 0x00};
-                LongReport effectResponse{};
-                if(!requestLong(fx.index, 0x02, effectQuery, sizeof(effectQuery),
-                                effectResponse, err)) {
-                    return false;
-                }
-
-                const std::uint16_t effectType =
-                    (static_cast<std::uint16_t>(effectResponse[6]) << 8) |
-                     static_cast<std::uint16_t>(effectResponse[7]);
-                if(effectType == 0x0001) {
-                    staticEffectIndex[zone] = effect;
-                    break;
-                }
-            }
-
-            if(staticEffectIndex[zone] == 0xff) {
-                if(err) {
-                    *err = "HID++ 0x8070 zone " + std::to_string(zone) +
-                           " has no static-color effect";
-                }
-                return false;
-            }
+            zones.push_back({zone, r, g, b});
         }
-
-        // 0x8070 function 8: SetSWControl(enabled, persist).
-        const std::uint8_t claim[2] = {0x01, 0x01};
-        LongReport claimResponse{};
-        if(!requestLong(fx.index, 0x08, claim, sizeof(claim),
-                        claimResponse, err)) {
+        if(!setColorLed8070Zones(zones, err)) {
             return false;
-        }
-
-        // 0x8070 function 3: SetEffectByIndex.
-        for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
-            std::uint8_t params[16]{};
-            params[0] = zone;
-            params[1] = staticEffectIndex[zone];
-            params[2] = r;
-            params[3] = g;
-            params[4] = b;
-            params[5] = (r || g || b) ? 0x02 : 0x00;
-            params[12] = 0x00;
-
-            LongReport response{};
-            if(!requestLong(fx.index, 0x03, params, sizeof(params),
-                            response, err)) {
-                return false;
-            }
         }
         wroteLighting = true;
     }
