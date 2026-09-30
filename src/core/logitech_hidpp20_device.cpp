@@ -34,9 +34,35 @@ bool LogitechHIDPP20Device::parseHex(const std::string& value, int& out) {
     return true;
 }
 
-std::string LogitechHIDPP20Device::findG810DevicePath(std::uint16_t* productId) {
+LogitechKeyboardModel LogitechHIDPP20Device::modelForProductId(
+    std::uint16_t productId) {
+    switch(productId) {
+        case kG610ProductId1:
+        case kG610ProductId2:
+            return LogitechKeyboardModel::G610;
+        case kG810ProductId1:
+        case kG810ProductId2:
+            return LogitechKeyboardModel::G810;
+        default:
+            return LogitechKeyboardModel::Unknown;
+    }
+}
+
+const char* LogitechHIDPP20Device::modelName(LogitechKeyboardModel model) {
+    switch(model) {
+        case LogitechKeyboardModel::G610: return "G610";
+        case LogitechKeyboardModel::G810: return "G810";
+        default: return "Unknown Logitech keyboard";
+    }
+}
+
+std::string LogitechHIDPP20Device::findKeyboardDevicePath(
+    std::uint16_t* productId, LogitechKeyboardModel* model) {
     if(productId) {
         *productId = 0;
+    }
+    if(model) {
+        *model = LogitechKeyboardModel::Unknown;
     }
 
     const fs::path base = "/sys/class/hidraw";
@@ -76,13 +102,13 @@ std::string LogitechHIDPP20Device::findG810DevicePath(std::uint16_t* productId) 
         }
 
         if(vid != kVendorId ||
-           (pid != kG810ProductId1 && pid != kG810ProductId2)) {
+           modelForProductId(static_cast<std::uint16_t>(pid)) ==
+               LogitechKeyboardModel::Unknown) {
             continue;
         }
 
-        // g810-led's working libusb path claims interface 1 on the G810.
-        // Confirm that interface here so the normal keyboard HID collection is
-        // not mistaken for the HID++ endpoint.
+        // Both G610 and G810 expose the lighting HID++ endpoint on USB
+        // interface 1. Keep the normal keyboard HID collection untouched.
         const fs::path real = fs::canonical(devlink, ec);
         if(ec) {
             continue;
@@ -100,12 +126,16 @@ std::string LogitechHIDPP20Device::findG810DevicePath(std::uint16_t* productId) 
             }
             parent = parent.parent_path();
         }
-        if(ifnum != kG810Interface) {
+        if(ifnum != kLightingInterface) {
             continue;
         }
 
+        const auto matchedPid = static_cast<std::uint16_t>(pid);
         if(productId) {
-            *productId = static_cast<std::uint16_t>(pid);
+            *productId = matchedPid;
+        }
+        if(model) {
+            *model = modelForProductId(matchedPid);
         }
         return std::string("/dev/") + name;
     }
@@ -113,12 +143,13 @@ std::string LogitechHIDPP20Device::findG810DevicePath(std::uint16_t* productId) 
     return {};
 }
 
-bool LogitechHIDPP20Device::openG810(std::string* err) {
+bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
     std::uint16_t pid = 0;
-    const std::string devicePath = findG810DevicePath(&pid);
+    LogitechKeyboardModel keyboardModel = LogitechKeyboardModel::Unknown;
+    const std::string devicePath = findKeyboardDevicePath(&pid, &keyboardModel);
     if(devicePath.empty()) {
         if(err) {
-            *err = "No supported Logitech G810 HID++ interface found";
+            *err = "No supported Logitech G610/G810 HID++ interface found";
         }
         return false;
     }
@@ -152,6 +183,22 @@ void LogitechHIDPP20Device::close() {
     }
     path_.clear();
     productId_ = 0;
+}
+
+void LogitechHIDPP20Device::normalizeLightingColor(
+    std::uint8_t& r, std::uint8_t& g, std::uint8_t& b) const {
+    if(!isMonochrome()) {
+        return;
+    }
+
+    // G610 has white LEDs. Its HID++ payload still has three color bytes, but
+    // the established G610 protocol representation uses the first byte as
+    // intensity and leaves the other two at zero. Collapse arbitrary RGB input
+    // to a single brightness so the common API remains usable.
+    const std::uint8_t intensity = std::max({r, g, b});
+    r = intensity;
+    g = 0;
+    b = 0;
 }
 
 bool LogitechHIDPP20Device::requestLongRaw(
@@ -462,6 +509,8 @@ bool LogitechHIDPP20Device::getPerKey8080Info(
 bool LogitechHIDPP20Device::setSolid(
     std::uint8_t r, std::uint8_t g, std::uint8_t b, std::string* err) {
 
+    normalizeLightingColor(r, g, b);
+
     LogitechHIDPP20FeatureInfo fx;
     if(!getFeature(kFeatureColorLedEffects, fx, err)) {
         return false;
@@ -575,6 +624,8 @@ bool LogitechHIDPP20Device::setPerKey8080Color(
     std::uint8_t r, std::uint8_t g, std::uint8_t b,
     std::string* err) {
 
+    normalizeLightingColor(r, g, b);
+
     LogitechHIDPP20FeatureInfo perKey;
     if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
         return false;
@@ -649,10 +700,14 @@ bool LogitechHIDPP20Device::setPerKey8080Colors(
         std::size_t pos = 4;
         for(std::size_t i = 0; i < count; ++i) {
             const auto& color = colors[start + i];
+            std::uint8_t r = color.r;
+            std::uint8_t g = color.g;
+            std::uint8_t b = color.b;
+            normalizeLightingColor(r, g, b);
             payload[pos++] = color.keyId;
-            payload[pos++] = color.r;
-            payload[pos++] = color.g;
-            payload[pos++] = color.b;
+            payload[pos++] = r;
+            payload[pos++] = g;
+            payload[pos++] = b;
         }
 
         if(!writeVeryLong(perKey.index, 0x03, payload, pos, err)) {
