@@ -214,7 +214,8 @@ void usageCase() {
 void usageLogitech() {
     std::printf(
         "Logitech HID++ 2.0:\n"
-        "  krgb-cli logitech info        probe G810 HID++ and lighting features\n");
+        "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
+        "  krgb-cli logitech solid R G B set all firmware lighting zones\n");
 }
 
 void usageLightMountGeneral() {
@@ -339,7 +340,7 @@ int runCase(const std::vector<std::string>& a) {
 
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
-    if(sub != "info") {
+    if(sub != "info" && sub != "solid") {
         usageLogitech();
         return 2;
     }
@@ -349,6 +350,44 @@ int runLogitech(const std::vector<std::string>& a) {
     if(!dev.openG810(&err)) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
+    }
+
+    if(sub == "solid") {
+        if(a.size() != 5) {
+            usageLogitech();
+            return 2;
+        }
+
+        auto parseChannel = [](const std::string& value, std::uint8_t& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < 0 || parsed > 255) {
+                return false;
+            }
+            out = static_cast<std::uint8_t>(parsed);
+            return true;
+        };
+
+        std::uint8_t r = 0, g = 0, b = 0;
+        if(!parseChannel(a[2], r) ||
+           !parseChannel(a[3], g) ||
+           !parseChannel(a[4], b)) {
+            std::fprintf(stderr, "error: RGB values must be within 0..255\n");
+            return 2;
+        }
+
+        if(!dev.setSolid(r, g, b, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        std::printf("Logitech G810 solid -> %u,%u,%u\n",
+                    static_cast<unsigned>(r),
+                    static_cast<unsigned>(g),
+                    static_cast<unsigned>(b));
+        return 0;
     }
 
     std::printf("device   : %s\n", dev.path().c_str());
