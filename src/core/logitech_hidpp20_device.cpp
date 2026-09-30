@@ -145,8 +145,7 @@ std::string LogitechHIDPP20Device::findKeyboardDevicePath(
 
 bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
     std::uint16_t pid = 0;
-    LogitechKeyboardModel keyboardModel = LogitechKeyboardModel::Unknown;
-    const std::string devicePath = findKeyboardDevicePath(&pid, &keyboardModel);
+    const std::string devicePath = findKeyboardDevicePath(&pid, nullptr);
     if(devicePath.empty()) {
         if(err) {
             *err = "No supported Logitech G610/G810 HID++ interface found";
@@ -602,7 +601,7 @@ bool LogitechHIDPP20Device::setSolid(
         }
     }
 
-    // The G810 keeps the five status/backlight indicators in 0x8080 keyType
+    // G610/G810 keep the five status/backlight indicators in 0x8080 keyType
     // 0x0040. Program the complete group to the same RGB value so inactive
     // indicators retain their colour for the next time their status turns on.
     const std::vector<LogitechHIDPP20KeyColor> indicators = {
@@ -638,7 +637,7 @@ bool LogitechHIDPP20Device::setPerKey8080Color(
     }
 
     // Function 3: SetKeyColors. Payload is keyType (BE16), count (BE16),
-    // then (keyId, R, G, B) tuples. The G810 uses a 0x12 64-byte report.
+    // then (keyId, R, G, B) tuples. G610/G810 use a 0x12 64-byte report.
     std::uint8_t payload[8] = {
         static_cast<std::uint8_t>(keyType >> 8),
         static_cast<std::uint8_t>(keyType & 0xff),
