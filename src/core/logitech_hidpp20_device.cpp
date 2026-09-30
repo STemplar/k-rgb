@@ -135,16 +135,9 @@ void fillUsbIdentity(const fs::path& realHidPath,
 
 LogitechLightingColorCapability
 LogitechHIDPP20Device::colorCapabilityForProductId(std::uint16_t productId) {
-    switch(productId) {
-        case kG610ProductId1:
-        case kG610ProductId2:
-            return LogitechLightingColorCapability::Monochrome;
-        case kG810ProductId1:
-        case kG810ProductId2:
-            return LogitechLightingColorCapability::Rgb;
-        default:
-            return LogitechLightingColorCapability::Unknown;
-    }
+    const auto* known = logitechKnownDeviceForProductId(productId);
+    return known ? known->colorCapability
+                 : LogitechLightingColorCapability::Unknown;
 }
 
 LogitechLightingColorCapability LogitechHIDPP20Device::colorCapability() const {
@@ -154,6 +147,9 @@ LogitechLightingColorCapability LogitechHIDPP20Device::colorCapability() const {
 std::string LogitechHIDPP20Device::displayName() const {
     if(!usbIdentity_.product.empty()) {
         return usbIdentity_.product;
+    }
+    if(const auto* known = logitechKnownDeviceForProductId(usbIdentity_.productId)) {
+        return known->displayName;
     }
     if(!usbIdentity_.hidName.empty()) {
         return usbIdentity_.hidName;
@@ -166,7 +162,35 @@ std::string LogitechHIDPP20Device::displayName() const {
     return fallback;
 }
 
-bool LogitechHIDPP20Device::probePerKeyKeyboard(std::string* err) {
+bool LogitechHIDPP20Device::getLightingFeatures(
+    LogitechHIDPP20LightingFeatures& features, std::string* err) {
+
+    features = {};
+
+    const std::uint16_t ids[] = {
+        kFeatureBrightnessControl,
+        kFeatureColorLedEffects,
+        kFeatureRgbEffects,
+        kFeaturePerKeyLighting,
+        kFeaturePerKeyLighting2,
+    };
+    LogitechHIDPP20FeatureInfo* out[] = {
+        &features.brightness8040,
+        &features.colorLedEffects8070,
+        &features.rgbEffects8071,
+        &features.perKey8080,
+        &features.perKey8081,
+    };
+
+    for(std::size_t i = 0; i < std::size(ids); ++i) {
+        if(!getFeature(ids[i], *out[i], err)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::probeKeyboard(std::string* err) {
     std::uint8_t major = 0;
     std::uint8_t minor = 0;
     if(!getProtocolVersion(major, minor, err)) {
@@ -179,27 +203,32 @@ bool LogitechHIDPP20Device::probePerKeyKeyboard(std::string* err) {
         return false;
     }
 
-    LogitechHIDPP20FeatureInfo perKey;
-    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+    LogitechHIDPP20LightingFeatures features;
+    if(!getLightingFeatures(features, err)) {
         return false;
     }
-    if(perKey.index == 0) {
+    if(!features.hasKnownLightingFeature()) {
         if(err) {
-            *err = "HID++ feature 0x8080 is not supported";
+            *err = "HID++ 2.0 endpoint reports no known keyboard lighting feature";
         }
         return false;
     }
 
-    LogitechHIDPP20PerKeyInfo info;
-    if(!getPerKey8080Info(info, err)) {
-        return false;
-    }
-    if((info.typeFlags & 0x0001) == 0) {
-        if(err) {
-            *err = "HID++ 0x8080 reports no keyboard key type";
+    // When 0x8080 is present, verify that the feature actually exposes the
+    // keyboard key type before accepting it as a per-key keyboard endpoint.
+    if(features.perKey8080.index != 0) {
+        LogitechHIDPP20PerKeyInfo info;
+        if(!getPerKey8080Info(info, err)) {
+            return false;
         }
-        return false;
+        if((info.typeFlags & 0x0001) != 0) {
+            return true;
+        }
     }
+
+    // 0x8040/0x8070/0x8071/0x8081 are valid HID++ lighting capabilities too.
+    // They are accepted here so zoned/native/newer Logitech keyboards can be
+    // detected even before a model-specific write path is implemented.
     return true;
 }
 
@@ -255,7 +284,7 @@ bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
         usbIdentity_ = identity;
 
         std::string probeError;
-        if(probePerKeyKeyboard(&probeError)) {
+        if(probeKeyboard(&probeError)) {
             return true;
         }
 
@@ -264,7 +293,7 @@ bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
     }
 
     if(err) {
-        *err = "No Logitech HID++ 2.0 per-key keyboard found";
+        *err = "No Logitech HID++ 2.0 lighting keyboard found";
         if(!lastProbeError.empty()) {
             *err += " (last probe: " + lastProbeError + ")";
         }
