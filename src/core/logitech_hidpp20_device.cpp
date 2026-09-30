@@ -612,9 +612,9 @@ bool LogitechHIDPP20Device::setPerKey8080Colors(
     const std::vector<LogitechHIDPP20KeyColor>& colors,
     std::string* err) {
 
-    if(colors.empty() || colors.size() > 14) {
+    if(colors.empty()) {
         if(err) {
-            *err = "HID++ 0x8080 color group must contain 1..14 entries";
+            *err = "HID++ 0x8080 color group must contain at least one entry";
         }
         return false;
     }
@@ -630,22 +630,34 @@ bool LogitechHIDPP20Device::setPerKey8080Colors(
         return false;
     }
 
-    std::uint8_t payload[60]{};
-    payload[0] = static_cast<std::uint8_t>(keyType >> 8);
-    payload[1] = static_cast<std::uint8_t>(keyType & 0xff);
-    payload[2] = 0x00;
-    payload[3] = static_cast<std::uint8_t>(colors.size());
+    // One HID++ very-long report can carry at most 14 (keyId,R,G,B) tuples.
+    // Stage larger logical groups as consecutive SetKeyColors calls and flush
+    // only once after the final chunk so they become one committed frame.
+    constexpr std::size_t kMaxColorsPerReport = 14;
+    for(std::size_t start = 0; start < colors.size();
+        start += kMaxColorsPerReport) {
 
-    std::size_t pos = 4;
-    for(const auto& color : colors) {
-        payload[pos++] = color.keyId;
-        payload[pos++] = color.r;
-        payload[pos++] = color.g;
-        payload[pos++] = color.b;
-    }
+        const std::size_t count =
+            std::min<std::size_t>(kMaxColorsPerReport, colors.size() - start);
 
-    if(!writeVeryLong(perKey.index, 0x03, payload, pos, err)) {
-        return false;
+        std::uint8_t payload[60]{};
+        payload[0] = static_cast<std::uint8_t>(keyType >> 8);
+        payload[1] = static_cast<std::uint8_t>(keyType & 0xff);
+        payload[2] = 0x00;
+        payload[3] = static_cast<std::uint8_t>(count);
+
+        std::size_t pos = 4;
+        for(std::size_t i = 0; i < count; ++i) {
+            const auto& color = colors[start + i];
+            payload[pos++] = color.keyId;
+            payload[pos++] = color.r;
+            payload[pos++] = color.g;
+            payload[pos++] = color.b;
+        }
+
+        if(!writeVeryLong(perKey.index, 0x03, payload, pos, err)) {
+            return false;
+        }
     }
 
     LongReport response{};
