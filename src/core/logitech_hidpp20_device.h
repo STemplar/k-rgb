@@ -27,6 +27,19 @@ struct LogitechHIDPP20KeyColor {
     std::uint8_t b = 0;
 };
 
+struct LogitechHIDPP20PerKeyTypeInfo {
+    std::uint16_t keyType = 0;
+    std::uint16_t keyCount = 0;
+    std::vector<LogitechHIDPP20KeyColor> colors;
+};
+
+struct LogitechHIDPP20PerKeyInfo {
+    std::uint16_t typeFlags = 0;
+    std::uint16_t keyTypeCount = 0;
+    std::uint16_t maxKeyCount = 0;
+    std::vector<LogitechHIDPP20PerKeyTypeInfo> types;
+};
+
 class LogitechHIDPP20Device {
 public:
     static constexpr std::uint16_t kVendorId = 0x046d;
@@ -74,6 +87,12 @@ public:
     bool getFeature(std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
                     std::string* err = nullptr);
 
+    // Read the 0x8080 Per Key Lighting topology and current volatile RGB
+    // buffer. This is read-only and lets model code build a key map from the
+    // device-reported key types/IDs instead of assuming a keyboard variant.
+    bool getPerKey8080Info(LogitechHIDPP20PerKeyInfo& info,
+                           std::string* err = nullptr);
+
     // Set every firmware lighting zone to one static colour through feature
     // 0x8070 (Color LED Effects). Zone count and the static-effect index are
     // discovered at runtime; neither is assumed from the G810 captures.
@@ -97,7 +116,12 @@ public:
 private:
     using LongReport = std::array<std::uint8_t, 20>;
     using VeryLongReport = std::array<std::uint8_t, 64>;
+    using RawReport = std::array<std::uint8_t, 64>;
 
+    bool requestLongRaw(std::uint8_t featureIndex, std::uint8_t function,
+                        const std::uint8_t* params, std::size_t paramCount,
+                        RawReport& response, std::size_t& responseSize,
+                        std::string* err);
     bool requestLong(std::uint8_t featureIndex, std::uint8_t function,
                      const std::uint8_t* params, std::size_t paramCount,
                      LongReport& response, std::string* err);
