@@ -37,7 +37,7 @@ small, fast, and dependency-light.
 | --- | --- | --- | --- |
 | Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | full GUI/per-key |
 | Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | full GUI/per-key* |
-| Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | 5-zone RGB via `0x8070`; dump-derived, hardware-unverified |
 | Logitech G410 Atlas Spectrum | `046d:c330` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
 | Logitech G413 Carbon | `046d:c33a` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
 | Logitech G512 Carbon | `046d:c342` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
@@ -77,13 +77,14 @@ identified and inspected without adding their PID to the protocol code first,
 provided the corresponding hidraw endpoint is accessible.
 
 The additional Logitech models above are now registered in k-rgb and have udev
-access rules. The GUI can detect these HID++ keyboards and exposes the safe
-generic solid/off path when the discovered `0x8070` and/or `0x8080`
-capabilities provide it. Model-specific GUI effects and per-key geometry stay
-disabled until their HID++ path and physical geometry are implemented. G610/G810
-have the currently implemented and tested/derived `0x8080` per-key diagnostic
-path; the remaining models are being brought up through feature discovery rather
-than by copying a model-specific third-party protocol table.
+access rules. The GUI can detect these HID++ keyboards and exposes controls only
+for implemented feature paths. G213 is modeled as a five-zone RGB keyboard:
+the zone count is read from HID++ `0x8070` at runtime, while its physical
+five-zone interpretation and 1..5 region-address quirk are corroborated by the
+MatMoul G213 packet captures. The G213 path remains hardware-unverified in
+k-rgb. G610/G810 have the existing `0x8080` per-key diagnostic path; other
+models remain discovery/metadata targets until their actual hardware path is
+verified.
 
 ### Case / chassis lighting (experimental)
 
