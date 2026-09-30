@@ -5,6 +5,7 @@
 #   Alienware AW510K keyboard     04f2:1830
 #   Alienware AW-ELC controller  187c:0550 / 187c:0551
 #   be quiet! Light Mount         373f:0002
+#   Logitech G610 Orion           046d:c333 / 046d:c338
 #   Logitech G810 Orion Spectrum  046d:c331 / 046d:c337
 #
 # Install:
@@ -19,6 +20,8 @@ KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="187c", ATTRS{idProduct
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="187c", ATTRS{idProduct}=="0551", MODE="0660", GROUP="plugdev", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="373f", ATTRS{idProduct}=="0002", MODE="0660", GROUP="plugdev", TAG+="uaccess"
 
-# Logitech G810 HID++ 2.0 lighting interface
+# Logitech G610/G810 HID++ 2.0 lighting interface
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c333", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c338", MODE="0660", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c331", MODE="0660", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c337", MODE="0660", TAG+="uaccess"
