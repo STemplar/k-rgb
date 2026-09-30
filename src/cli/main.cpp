@@ -215,6 +215,7 @@ void usageLogitech() {
     std::printf(
         "Logitech HID++ 2.0:\n"
         "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
+        "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
         "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
         "  krgb-cli logitech indicator NAME R G B\n"
         "    NAME: backlight|game|caps|scroll|num\n");
@@ -342,7 +343,8 @@ int runCase(const std::vector<std::string>& a) {
 
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
-    if(sub != "info" && sub != "solid" && sub != "indicator") {
+    if(sub != "info" && sub != "perkey-info" &&
+       sub != "solid" && sub != "indicator") {
         usageLogitech();
         return 2;
     }
@@ -352,6 +354,51 @@ int runLogitech(const std::vector<std::string>& a) {
     if(!dev.openG810(&err)) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
+    }
+
+    if(sub == "perkey-info") {
+        if(a.size() != 2) {
+            usageLogitech();
+            return 2;
+        }
+
+        LogitechHIDPP20PerKeyInfo info;
+        if(!dev.getPerKey8080Info(info, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        std::printf("0x8080 typeFlags   : 0x%04x\n",
+                    static_cast<unsigned>(info.typeFlags));
+        std::printf("0x8080 keyTypes    : %u\n",
+                    static_cast<unsigned>(info.keyTypeCount));
+        std::printf("0x8080 maxKeyCount : %u\n",
+                    static_cast<unsigned>(info.maxKeyCount));
+
+        for(const auto& type : info.types) {
+            const char* name = "unknown";
+            switch(type.keyType) {
+                case 0x0001: name = "keyboard"; break;
+                case 0x0002: name = "consumer/media"; break;
+                case 0x0004: name = "G-keys"; break;
+                case 0x0008: name = "buttons"; break;
+                case 0x0010: name = "logo"; break;
+                case 0x0040: name = "indicators"; break;
+            }
+
+            std::printf("keyType 0x%04x %-14s reported=%u discovered=%zu\n",
+                        static_cast<unsigned>(type.keyType), name,
+                        static_cast<unsigned>(type.keyCount),
+                        type.colors.size());
+            for(const auto& color : type.colors) {
+                std::printf("  id 0x%02x  RGB %3u %3u %3u\n",
+                            static_cast<unsigned>(color.keyId),
+                            static_cast<unsigned>(color.r),
+                            static_cast<unsigned>(color.g),
+                            static_cast<unsigned>(color.b));
+            }
+        }
+        return 0;
     }
 
     if(sub == "indicator") {
