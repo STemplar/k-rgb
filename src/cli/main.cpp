@@ -367,17 +367,17 @@ int runLogitech(const std::vector<std::string>& a) {
 
     const std::string keyboardName = dev.displayName();
     std::uint8_t geometryModelMask = 0;
-    switch(dev.productId()) {
-        case LogitechHIDPP20Device::kG610ProductId1:
-        case LogitechHIDPP20Device::kG610ProductId2:
-            geometryModelMask = logitech::g610_g810::kModelG610;
-            break;
-        case LogitechHIDPP20Device::kG810ProductId1:
-        case LogitechHIDPP20Device::kG810ProductId2:
-            geometryModelMask = logitech::g610_g810::kModelG810;
-            break;
-        default:
-            break;
+    if(const auto* known = logitechKnownDeviceForProductId(dev.productId())) {
+        switch(known->model) {
+            case LogitechKnownModel::G610Orion:
+                geometryModelMask = logitech::g610_g810::kModelG610;
+                break;
+            case LogitechKnownModel::G810OrionSpectrum:
+                geometryModelMask = logitech::g610_g810::kModelG810;
+                break;
+            default:
+                break;
+        }
     }
 
     auto findDeviceGeometry = [&](const std::string& name) {
@@ -1131,13 +1131,13 @@ int runLogitech(const std::vector<std::string>& a) {
     if(!usb.serial.empty()) {
         std::printf("serial   : %s\n", usb.serial.c_str());
     }
-    const char* colorCapability = "device-reported HID++ per-key";
+    const char* colorCapability = "unknown (not reported by HID++)";
     switch(dev.colorCapability()) {
         case LogitechLightingColorCapability::Monochrome:
-            colorCapability = "white per-key (known G610 quirk)";
+            colorCapability = "monochrome (known hardware property)";
             break;
         case LogitechLightingColorCapability::Rgb:
-            colorCapability = "RGB per-key";
+            colorCapability = "RGB (known hardware property)";
             break;
         case LogitechLightingColorCapability::Unknown:
             break;
@@ -1195,6 +1195,7 @@ int runLogitech(const std::vector<std::string>& a) {
         const char* name;
     };
     const FeatureProbe probes[] = {
+        {LogitechHIDPP20Device::kFeatureBrightnessControl, "Brightness Control"},
         {LogitechHIDPP20Device::kFeatureColorLedEffects, "Color LED Effects"},
         {LogitechHIDPP20Device::kFeatureRgbEffects, "RGB Effects"},
         {LogitechHIDPP20Device::kFeaturePerKeyLighting, "Per Key Lighting"},
