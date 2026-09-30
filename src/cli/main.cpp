@@ -1098,8 +1098,12 @@ int runLogitech(const std::vector<std::string>& a) {
         return 0;
     }
 
+    std::printf("model    : Logitech %s\n", keyboardName);
     std::printf("device   : %s\n", dev.path().c_str());
     std::printf("usb      : 046d:%04x\n", static_cast<unsigned>(dev.productId()));
+    std::printf("lighting : %s\n",
+                dev.isMonochrome() ? "white per-key (intensity)"
+                                   : "RGB per-key");
 
     std::uint8_t major = 0;
     std::uint8_t minor = 0;
