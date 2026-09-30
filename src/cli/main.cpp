@@ -215,7 +215,9 @@ void usageLogitech() {
     std::printf(
         "Logitech HID++ 2.0:\n"
         "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
-        "  krgb-cli logitech solid R G B set all firmware lighting zones\n");
+        "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
+        "  krgb-cli logitech indicator NAME R G B\n"
+        "    NAME: backlight|game|caps|scroll|num\n");
 }
 
 void usageLightMountGeneral() {
@@ -340,7 +342,7 @@ int runCase(const std::vector<std::string>& a) {
 
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
-    if(sub != "info" && sub != "solid") {
+    if(sub != "info" && sub != "solid" && sub != "indicator") {
         usageLogitech();
         return 2;
     }
@@ -350,6 +352,62 @@ int runLogitech(const std::vector<std::string>& a) {
     if(!dev.openG810(&err)) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
+    }
+
+    if(sub == "indicator") {
+        if(a.size() != 6) {
+            usageLogitech();
+            return 2;
+        }
+
+        std::uint8_t keyId = 0;
+        if(a[2] == "backlight") {
+            keyId = 0x01;
+        } else if(a[2] == "game") {
+            keyId = 0x02;
+        } else if(a[2] == "caps") {
+            keyId = 0x03;
+        } else if(a[2] == "scroll") {
+            keyId = 0x04;
+        } else if(a[2] == "num") {
+            keyId = 0x05;
+        } else {
+            std::fprintf(stderr, "error: unknown indicator: %s\n", a[2].c_str());
+            return 2;
+        }
+
+        auto parseChannel = [](const std::string& value, std::uint8_t& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < 0 || parsed > 255) {
+                return false;
+            }
+            out = static_cast<std::uint8_t>(parsed);
+            return true;
+        };
+
+        std::uint8_t r = 0, g = 0, b = 0;
+        if(!parseChannel(a[3], r) ||
+           !parseChannel(a[4], g) ||
+           !parseChannel(a[5], b)) {
+            std::fprintf(stderr, "error: RGB values must be within 0..255\n");
+            return 2;
+        }
+
+        constexpr std::uint16_t kIndicatorKeyType = 0x0040;
+        if(!dev.setPerKey8080Color(kIndicatorKeyType, keyId, r, g, b, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        std::printf("Logitech G810 indicator %s -> %u,%u,%u\n",
+                    a[2].c_str(),
+                    static_cast<unsigned>(r),
+                    static_cast<unsigned>(g),
+                    static_cast<unsigned>(b));
+        return 0;
     }
 
     if(sub == "solid") {
