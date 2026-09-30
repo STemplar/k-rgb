@@ -1,12 +1,13 @@
-// Logitech G810 Orion Spectrum C331 INTL physical lighting map.
+// Logitech G810 Orion Spectrum physical lighting definitions.
 //
-// Source model/layout: Logitech Gaming Software resources
-// G810_PIDC331_INTL.xml + PerKeyLightingDefaults.txt.
-// The HID++ 0x8080 firmware can expose a broader Logitech address superset;
-// this table contains only the physically present C331 INTL lighting elements.
+// Sources: Logitech Gaming Software G810 SVG/XML resources and
+// PerKeyLightingDefaults.txt. Regional keyboard layouts are intentionally not
+// represented here: RGB control only needs the physical key geometry/key set.
 //
-// The 105 keyboard IDs were also physically verified on a C331 INTL G810.
-// Media, indicator/control and logo IDs were verified on the same device.
+// HID++ 0x8080 can expose a broader Logitech address superset than a physical
+// keyboard contains. The geometry tables below select the physically present
+// addresses. The ISO105 set, media keys, indicators/controls and logo were
+// physically verified on a PID C331 G810.
 #pragma once
 
 #include <array>
@@ -28,7 +29,7 @@ struct LightingElement {
     const char* label;  // Human-readable physical label.
 };
 
-inline constexpr std::array<LightingElement, 105> kC331IntlKeyboard = {{
+// Stable names/labels for the 105 addresses in the verified ISO105 set.\ninline constexpr std::array<LightingElement, 105> kBaseKeyboardDefinitions = {{
     { kKeyboardKeyType, 0x29, "ESC", "Esc" },
     { kKeyboardKeyType, 0x3a, "F1", "F1" },
     { kKeyboardKeyType, 0x3b, "F2", "F2" },
@@ -137,7 +138,7 @@ inline constexpr std::array<LightingElement, 105> kC331IntlKeyboard = {{
 }};
 
 
-inline constexpr std::array<LightingElement, 8> kRegionalKeyboardKeys = {{
+// Additional addresses used by the other physical G810 geometries.\ninline constexpr std::array<LightingElement, 8> kAdditionalKeyboardDefinitions = {{
     { kKeyboardKeyType, 0x31, "BACKSLASH", "\\ / |" },
     { kKeyboardKeyType, 0x87, "INTL1", "International 1" },
     { kKeyboardKeyType, 0x88, "INTL2", "International 2" },
@@ -201,31 +202,26 @@ inline constexpr std::array<std::uint8_t, 106> kKor106Ids = {{
     0x57, 0x5c, 0x5d, 0x5e, 0x59, 0x5a, 0x5b, 0x58, 0x62, 0x63
 }};
 
-struct KeyboardLayout {
-    const char* name;            // LGS resource suffix / stable layout name.
-    const char* resource;        // Source SVG resource.
+struct KeyboardGeometry {
+    const char* name;      // Stable CLI/internal geometry name.
+    const char* sources;   // LGS SVG resources with this physical key set.
     const std::uint8_t* keyIds;
     std::size_t keyCount;
-    std::uint16_t preferredProductId; // 0 when not PID-specific.
 };
 
-inline constexpr std::array<KeyboardLayout, 16> kLayouts = {{
-    { "CHT",           "G810_CHT.svg",           kAnsi104Ids.data(),     kAnsi104Ids.size(),     0 },
-    { "DEU",           "G810_DEU.svg",           kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "FRA",           "G810_FRA.svg",           kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "INTL",          "G810_INTL.svg",          kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "ITA",           "G810_ITA.svg",           kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "JPN",           "G810_JPN.svg",           kJpn108Ids.data(),      kJpn108Ids.size(),      0 },
-    { "KOR",           "G810_KOR.svg",           kKor106Ids.data(),      kKor106Ids.size(),      0 },
-    { "NORDIC",        "G810_NORDIC.svg",        kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "PIDC331_INTL",  "G810_PIDC331_INTL.svg", kIso105Ids.data(),      kIso105Ids.size(),      0xc331 },
-    { "PIDC337_INTL",  "G810_PIDC337_INTL.svg", kC337Intl104Ids.data(), kC337Intl104Ids.size(), 0xc337 },
-    { "RU",            "G810_RU.svg",            kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "SW",            "G810_SW.svg",            kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "THAI",          "G810_THAI.svg",          kAnsi104Ids.data(),     kAnsi104Ids.size(),     0 },
-    { "TUR",           "G810_TUR.svg",           kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "UK",            "G810_UK.svg",            kIso105Ids.data(),      kIso105Ids.size(),      0 },
-    { "US",            "G810_US.svg",            kAnsi104Ids.data(),     kAnsi104Ids.size(),     0 },
+// Unique physical G810 key sets found in the LGS SVG resources. Regional
+// legends/layouts that share the same key set are deliberately collapsed.
+inline constexpr std::array<KeyboardGeometry, 5> kGeometries = {{
+    { "ANSI104", "G810_CHT/THAI/US.svg",
+      kAnsi104Ids.data(), kAnsi104Ids.size() },
+    { "ISO105", "G810_DEU/FRA/INTL/ITA/NORDIC/PIDC331_INTL/RU/SW/TUR/UK.svg",
+      kIso105Ids.data(), kIso105Ids.size() },
+    { "JIS108", "G810_JPN.svg",
+      kJpn108Ids.data(), kJpn108Ids.size() },
+    { "KOR106", "G810_KOR.svg",
+      kKor106Ids.data(), kKor106Ids.size() },
+    { "INTL104", "G810_PIDC337_INTL.svg",
+      kC337Intl104Ids.data(), kC337Intl104Ids.size() },
 }};
 
 inline constexpr std::array<LightingElement, 5> kMedia = {{
@@ -247,10 +243,6 @@ inline constexpr std::array<LightingElement, 5> kIndicators = {{
 inline constexpr std::array<LightingElement, 1> kLogo = {{
     { kLogoKeyType, 0x01, "LOGO", "Logo" },
 }};
-
-inline constexpr std::size_t kKeyboardCount = kC331IntlKeyboard.size();
-inline constexpr std::size_t kPhysicalLightingCount =
-    kC331IntlKeyboard.size() + kMedia.size() + kIndicators.size() + kLogo.size();
 
 constexpr char asciiLower(char c) {
     return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
@@ -280,19 +272,19 @@ inline const LightingElement* findById(
 }
 
 inline const LightingElement* keyboardDefinitionById(std::uint8_t keyId) {
-    if(const auto* key = findById(kC331IntlKeyboard, keyId)) {
+    if(const auto* key = findById(kBaseKeyboardDefinitions, keyId)) {
         return key;
     }
-    return findById(kRegionalKeyboardKeys, keyId);
+    return findById(kAdditionalKeyboardDefinitions, keyId);
 }
 
 inline const LightingElement* keyboardDefinitionByName(std::string_view name) {
-    for(const auto& key : kC331IntlKeyboard) {
+    for(const auto& key : kBaseKeyboardDefinitions) {
         if(asciiIEquals(key.name, name)) {
             return &key;
         }
     }
-    for(const auto& key : kRegionalKeyboardKeys) {
+    for(const auto& key : kAdditionalKeyboardDefinitions) {
         if(asciiIEquals(key.name, name)) {
             return &key;
         }
@@ -300,28 +292,18 @@ inline const LightingElement* keyboardDefinitionByName(std::string_view name) {
     return nullptr;
 }
 
-inline const KeyboardLayout* findLayout(std::string_view name) {
-    for(const auto& layout : kLayouts) {
-        if(asciiIEquals(layout.name, name)) {
-            return &layout;
+inline const KeyboardGeometry* findGeometry(std::string_view name) {
+    for(const auto& geometry : kGeometries) {
+        if(asciiIEquals(geometry.name, name)) {
+            return &geometry;
         }
     }
     return nullptr;
 }
 
-inline const KeyboardLayout* defaultLayoutForProduct(std::uint16_t productId) {
-    if(productId == 0xc331) {
-        return findLayout("PIDC331_INTL");
-    }
-    if(productId == 0xc337) {
-        return findLayout("PIDC337_INTL");
-    }
-    return nullptr;
-}
-
-inline bool layoutHasKey(const KeyboardLayout& layout, std::uint8_t keyId) {
-    for(std::size_t i = 0; i < layout.keyCount; ++i) {
-        if(layout.keyIds[i] == keyId) {
+inline bool geometryHasKey(const KeyboardGeometry& geometry, std::uint8_t keyId) {
+    for(std::size_t i = 0; i < geometry.keyCount; ++i) {
+        if(geometry.keyIds[i] == keyId) {
             return true;
         }
     }
@@ -329,29 +311,29 @@ inline bool layoutHasKey(const KeyboardLayout& layout, std::uint8_t keyId) {
 }
 
 inline const LightingElement* findKeyboardById(
-    const KeyboardLayout& layout, std::uint8_t keyId) {
-    if(!layoutHasKey(layout, keyId)) {
+    const KeyboardGeometry& geometry, std::uint8_t keyId) {
+    if(!geometryHasKey(geometry, keyId)) {
         return nullptr;
     }
     return keyboardDefinitionById(keyId);
 }
 
 inline const LightingElement* findKeyboardByName(
-    const KeyboardLayout& layout, std::string_view name) {
+    const KeyboardGeometry& geometry, std::string_view name) {
     const auto* key = keyboardDefinitionByName(name);
-    if(!key || !layoutHasKey(layout, key->keyId)) {
+    if(!key || !geometryHasKey(geometry, key->keyId)) {
         return nullptr;
     }
     return key;
 }
 
-// Backwards-compatible C331 INTL helpers used by older callers.
+// Backwards-compatible ISO105 helpers used by older diagnostic callers.
 inline const LightingElement* findKeyboardById(std::uint8_t keyId) {
-    return findById(kC331IntlKeyboard, keyId);
+    return findById(kBaseKeyboardDefinitions, keyId);
 }
 
 inline const LightingElement* findKeyboardByName(std::string_view name) {
-    for(const auto& key : kC331IntlKeyboard) {
+    for(const auto& key : kBaseKeyboardDefinitions) {
         if(asciiIEquals(key.name, name)) {
             return &key;
         }
@@ -359,8 +341,8 @@ inline const LightingElement* findKeyboardByName(std::string_view name) {
     return nullptr;
 }
 
-inline std::size_t physicalLightingCount(const KeyboardLayout& layout) {
-    return layout.keyCount + kMedia.size() + kIndicators.size() + kLogo.size();
+inline std::size_t physicalLightingCount(const KeyboardGeometry& geometry) {
+    return geometry.keyCount + kMedia.size() + kIndicators.size() + kLogo.size();
 }
 
 inline const LightingElement* findPhysical(
