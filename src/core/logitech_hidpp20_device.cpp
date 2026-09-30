@@ -71,20 +71,21 @@ bool parseHidUevent(const fs::path& devlink, int& vid, int& pid,
             const auto p2 = p1 == std::string::npos
                 ? std::string::npos : body.find(':', p1 + 1);
             if(p1 != std::string::npos && p2 != std::string::npos) {
+                const std::string vidText =
+                    body.substr(p1 + 1, p2 - p1 - 1);
+                const std::string pidText = body.substr(p2 + 1);
+
                 char* end = nullptr;
                 errno = 0;
-                const long parsedVid =
-                    std::strtol(body.substr(p1 + 1, p2 - p1 - 1).c_str(),
-                                &end, 16);
-                if(end && *end == '\0' && errno == 0) {
+                const long parsedVid = std::strtol(vidText.c_str(), &end, 16);
+                if(end != vidText.c_str() && *end == '\0' && errno == 0) {
                     vid = static_cast<int>(parsedVid);
                 }
 
                 end = nullptr;
                 errno = 0;
-                const long parsedPid =
-                    std::strtol(body.substr(p2 + 1).c_str(), &end, 16);
-                if(end && *end == '\0' && errno == 0) {
+                const long parsedPid = std::strtol(pidText.c_str(), &end, 16);
+                if(end != pidText.c_str() && *end == '\0' && errno == 0) {
                     pid = static_cast<int>(parsedPid);
                 }
             }
