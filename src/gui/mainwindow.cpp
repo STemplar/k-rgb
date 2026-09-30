@@ -699,18 +699,32 @@ void MainWindow::refreshKeyboardZoneEditor() {
         return;
     }
 
-    while(!keyboardZoneButtons_.isEmpty()) {
-        KColorButton* button = keyboardZoneButtons_.takeLast();
-        keyboardZoneRow_->removeWidget(button);
-        button->deleteLater();
+    keyboardZoneButtons_.clear();
+    while(QLayoutItem* item = keyboardZoneRow_->takeAt(0)) {
+        if(QWidget* widget = item->widget()) {
+            widget->deleteLater();
+        }
+        if(QLayout* layout = item->layout()) {
+            while(QLayoutItem* child = layout->takeAt(0)) {
+                if(QWidget* widget = child->widget()) {
+                    widget->deleteLater();
+                }
+                delete child;
+            }
+            delete layout;
+        }
+        delete item;
     }
 
+    const LightingSettings saved = LightingSettings::load(Profiles::current());
     const int count = controller_->supportsZoneColors() ? controller_->zoneCount() : 0;
     for(int zone = 0; zone < count; ++zone) {
         auto* column = new QVBoxLayout();
         auto* label = new QLabel(i18n("Zone %1", zone + 1), keyboardZonePanel_);
         label->setAlignment(Qt::AlignHCenter);
-        auto* button = new KColorButton(QColor(0, 170, 255), keyboardZonePanel_);
+        auto* button = new KColorButton(
+            saved.keyboardZoneColors.value(zone, QColor(0, 170, 255)),
+            keyboardZonePanel_);
         button->setToolTip(i18n("Colour for keyboard zone %1", zone + 1));
         keyboardZoneButtons_.push_back(button);
         column->addWidget(label);
@@ -974,6 +988,9 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         colorButton_->setEnabled(false);
         speedCombo_->setEnabled(false);
         directionCombo_->setEnabled(false);
+        if(keyboardZonePanel_) {
+            keyboardZonePanel_->setVisible(false);
+        }
     }
 }
 
