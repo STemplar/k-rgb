@@ -119,17 +119,18 @@ MainWindow::MainWindow(KeyboardController* controller, CaseController* caseContr
 }
 
 void MainWindow::populateModes() {
-    //          name                       value                          solid  rnbw   pkey   color  speed  dir
+    //          name                       value                          solid  rnbw   pkey  zones  color  speed  dir
     modes_ = {
-        { i18n("Solid colour"),     static_cast<int>(Mode::Direct),      true,  false, false, true,  false, false },
-        { i18n("Rainbow (static)"), 0,                                   false, true,  false, false, false, false },
-        { i18n("Per-key (custom)"), 0,                                   false, false, true,  true,  false, false },
-        { i18n("Breathing"),        static_cast<int>(Mode::Breathing),   false, false, false, true,  true,  false },
-        { i18n("Pulse"),            static_cast<int>(Mode::Pulse),       false, false, false, true,  true,  false },
-        { i18n("Spectrum"),         static_cast<int>(Mode::Spectrum),    false, false, false, false, true,  false },
-        { i18n("Single wave"),      static_cast<int>(Mode::SingleWave),  false, false, false, true,  true,  true  },
-        { i18n("Rainbow wave"),     static_cast<int>(Mode::RainbowWave), false, false, false, false, true,  true  },
-        { i18n("Scanner"),          static_cast<int>(Mode::Scanner),     false, false, false, true,  true,  false },
+        { i18n("Solid colour"),     static_cast<int>(Mode::Direct),      true,  false, false, false, true,  false, false },
+        { i18n("Rainbow (static)"), 0,                                   false, true,  false, false, false, false, false },
+        { i18n("Per-key (custom)"), 0,                                   false, false, true,  false, true,  false, false },
+        { i18n("Zones (custom)"),   0,                                   false, false, false, true,  false, false, false },
+        { i18n("Breathing"),        static_cast<int>(Mode::Breathing),   false, false, false, false, true,  true,  false },
+        { i18n("Pulse"),            static_cast<int>(Mode::Pulse),       false, false, false, false, true,  true,  false },
+        { i18n("Spectrum"),         static_cast<int>(Mode::Spectrum),    false, false, false, false, false, true,  false },
+        { i18n("Single wave"),      static_cast<int>(Mode::SingleWave),  false, false, false, false, true,  true,  true  },
+        { i18n("Rainbow wave"),     static_cast<int>(Mode::RainbowWave), false, false, false, false, false, true,  true  },
+        { i18n("Scanner"),          static_cast<int>(Mode::Scanner),     false, false, false, false, true,  true,  false },
     };
 }
 
@@ -291,6 +292,25 @@ QWidget* MainWindow::buildKeyboardPage() {
 
     perKeyPanel_->setVisible(false);
     v->addWidget(perKeyPanel_, 1);
+
+    // Keyboard zone editor (used by HID++ zone-based keyboards such as G213).
+    keyboardZonePanel_ = new QWidget(page);
+    auto* kzLayout = new QVBoxLayout(keyboardZonePanel_);
+    kzLayout->setContentsMargins(0, 0, 0, 0);
+    auto* kzHint = new QLabel(
+        i18n("Each block controls one device-reported lighting zone. "
+             "For G213 these correspond to the five physical RGB regions."),
+        keyboardZonePanel_);
+    kzHint->setWordWrap(true);
+    kzHint->setEnabled(false);
+    kzLayout->addWidget(kzHint);
+
+    keyboardZoneRow_ = new QHBoxLayout();
+    kzLayout->addLayout(keyboardZoneRow_);
+    keyboardZonePanel_->setVisible(false);
+    v->addWidget(keyboardZonePanel_);
+
+    refreshKeyboardZoneEditor();
     v->addStretch();
 
     auto* buttons = new QHBoxLayout();
@@ -322,8 +342,8 @@ QWidget* MainWindow::buildKeyboardPage() {
             return;
         }
         const ModeEntry& m = modes_.at(modeCombo_->currentIndex());
-        if(m.perkey) {
-            return;  // colour is just the paint source in per-key mode
+        if(m.perkey || m.zones) {
+            return;  // not a live shared-colour source in these editors
         }
         if(controller_->isConnected()) {
             onApply();
@@ -613,7 +633,8 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
         if(s.kind == LightingSettings::Solid && m.solid) { idx = i; break; }
         if(s.kind == LightingSettings::Rainbow && m.rainbow) { idx = i; break; }
         if(s.kind == LightingSettings::PerKey && m.perkey) { idx = i; break; }
-        if(s.kind == LightingSettings::Effect && !m.solid && !m.rainbow && !m.perkey
+        if(s.kind == LightingSettings::Zones && m.zones) { idx = i; break; }
+        if(s.kind == LightingSettings::Effect && !m.solid && !m.rainbow && !m.perkey && !m.zones
            && m.value == s.effectMode) {
             idx = i;
             break;
@@ -632,6 +653,10 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
     brightnessSlider_->setValue(s.brightness);
     brightnessValue_->setText(QStringLiteral("%1%").arg(s.brightness));
     keyboardWidget_->setKeyColors(s.keyColors);
+    for(int i = 0; i < keyboardZoneButtons_.size(); ++i) {
+        const QColor z = s.keyboardZoneColors.value(i, QColor(0, 0, 0));
+        keyboardZoneButtons_.at(i)->setColor(z);
+    }
     if(s.caseColor.isValid()) {
         caseColorButton_->setColor(s.caseColor);
     }
@@ -649,6 +674,11 @@ LightingSettings MainWindow::currentSettings() const {
     } else if(m.perkey) {
         s.kind = LightingSettings::PerKey;
         s.keyColors = keyboardWidget_->keyColors();
+    } else if(m.zones) {
+        s.kind = LightingSettings::Zones;
+        for(int i = 0; i < keyboardZoneButtons_.size(); ++i) {
+            s.keyboardZoneColors.insert(i, keyboardZoneButtons_.at(i)->color());
+        }
     } else {
         s.kind = LightingSettings::Effect;
         s.effectMode = m.value;
@@ -664,6 +694,42 @@ LightingSettings MainWindow::currentSettings() const {
     return s;
 }
 
+void MainWindow::refreshKeyboardZoneEditor() {
+    if(!keyboardZoneRow_) {
+        return;
+    }
+
+    while(!keyboardZoneButtons_.isEmpty()) {
+        KColorButton* button = keyboardZoneButtons_.takeLast();
+        keyboardZoneRow_->removeWidget(button);
+        button->deleteLater();
+    }
+
+    const int count = controller_->supportsZoneColors() ? controller_->zoneCount() : 0;
+    for(int zone = 0; zone < count; ++zone) {
+        auto* column = new QVBoxLayout();
+        auto* label = new QLabel(i18n("Zone %1", zone + 1), keyboardZonePanel_);
+        label->setAlignment(Qt::AlignHCenter);
+        auto* button = new KColorButton(QColor(0, 170, 255), keyboardZonePanel_);
+        button->setToolTip(i18n("Colour for keyboard zone %1", zone + 1));
+        keyboardZoneButtons_.push_back(button);
+        column->addWidget(label);
+        column->addWidget(button);
+        keyboardZoneRow_->addLayout(column);
+
+        connect(button, &KColorButton::changed, this, [this]() {
+            if(loading_ || !controller_->isConnected()) {
+                return;
+            }
+            const int idx = modeCombo_->currentIndex();
+            if(idx >= 0 && idx < modes_.size() && modes_.at(idx).zones) {
+                onApply();
+            }
+        });
+    }
+    keyboardZoneRow_->addStretch();
+}
+
 void MainWindow::onModeChanged() {
     const int idx = modeCombo_->currentIndex();
     if(idx < 0 || idx >= modes_.size()) {
@@ -671,7 +737,8 @@ void MainWindow::onModeChanged() {
     }
     const ModeEntry& m = modes_.at(idx);
     const bool advanced = controller_->supportsAdvancedModes();
-    const bool supported = advanced || m.solid;
+    const bool zoned = controller_->supportsZoneColors();
+    const bool supported = advanced || m.solid || (m.zones && zoned);
 
     colorButton_->setEnabled(supported && m.usesColor);
     speedCombo_->setEnabled(supported && m.usesSpeed);
@@ -679,6 +746,7 @@ void MainWindow::onModeChanged() {
     applyButton_->setEnabled(controller_->isConnected() && supported);
 
     perKeyPanel_->setVisible(advanced && m.perkey);
+    keyboardZonePanel_->setVisible(zoned && m.zones);
     if(advanced && m.perkey) {
         // Grow (never shrink) so the keyboard has room.
         resize(qMax(width(), 780), qMax(height(), 560));
@@ -686,7 +754,7 @@ void MainWindow::onModeChanged() {
 
     if(controller_->isConnected() && !supported) {
         applyButton_->setToolTip(
-            i18n("This mode is not exposed for the connected Logitech keyboard yet."));
+            i18n("This mode is not available for the connected keyboard."));
     } else {
         applyButton_->setToolTip(QString());
     }
@@ -880,6 +948,7 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         statusLabel_->setToolTip(i18n("Connected to %1 (%2)", model,
                                       path.isEmpty() ? i18n("unknown") : path));
         keyboardWidget_->setModelBit(controller_->modelBit());
+        refreshKeyboardZoneEditor();
 
         if(!controller_->supportsAdvancedModes()) {
             for(int i = 0; i < modes_.size(); ++i) {
