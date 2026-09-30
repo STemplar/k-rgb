@@ -365,26 +365,41 @@ int runLogitech(const std::vector<std::string>& a) {
         return 1;
     }
 
-    const auto keyboardModel = dev.model();
-    const char* keyboardName = LogitechHIDPP20Device::modelName(keyboardModel);
-    const std::uint8_t geometryModelMask =
-        keyboardModel == LogitechKeyboardModel::G610
-            ? logitech::g610_g810::kModelG610
-            : logitech::g610_g810::kModelG810;
+    const std::string keyboardName = dev.displayName();
+    std::uint8_t geometryModelMask = 0;
+    switch(dev.productId()) {
+        case LogitechHIDPP20Device::kG610ProductId1:
+        case LogitechHIDPP20Device::kG610ProductId2:
+            geometryModelMask = logitech::g610_g810::kModelG610;
+            break;
+        case LogitechHIDPP20Device::kG810ProductId1:
+        case LogitechHIDPP20Device::kG810ProductId2:
+            geometryModelMask = logitech::g610_g810::kModelG810;
+            break;
+        default:
+            break;
+    }
 
     auto findDeviceGeometry = [&](const std::string& name) {
+        if(geometryModelMask == 0) {
+            std::fprintf(stderr,
+                         "error: %s has no model-specific LGS geometry in k-rgb; "
+                         "use 'logitech perkey-info' for its device-reported topology\n",
+                         keyboardName.c_str());
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
         const auto* geometry = logitech::g610_g810::findGeometry(name);
         if(!geometry) {
             std::fprintf(stderr,
                          "error: unknown %s geometry '%s'; use 'logitech layouts'\n",
-                         keyboardName, name.c_str());
+                         keyboardName.c_str(), name.c_str());
             return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
         }
         if(!logitech::g610_g810::geometrySupportsModel(*geometry,
                                                        geometryModelMask)) {
             std::fprintf(stderr,
-                         "error: geometry %s is not present in the LGS %s resources\n",
-                         geometry->name, keyboardName);
+                         "error: geometry %s is not present in the LGS resources for %s\n",
+                         geometry->name, keyboardName.c_str());
             return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
         }
         return geometry;
@@ -395,8 +410,13 @@ int runLogitech(const std::vector<std::string>& a) {
             usageLogitech();
             return 2;
         }
-        std::printf("Logitech %s physical geometries from LGS resources:\n",
-                    keyboardName);
+        if(geometryModelMask == 0) {
+            std::printf("%s: no model-specific LGS geometry; topology is device-reported.\n",
+                        keyboardName.c_str());
+            return 0;
+        }
+        std::printf("%s physical geometries from LGS resources:\n",
+                    keyboardName.c_str());
         for(const auto& geometry : logitech::g610_g810::kGeometries) {
             if(!logitech::g610_g810::geometrySupportsModel(
                    geometry, geometryModelMask)) {
@@ -480,7 +500,7 @@ int runLogitech(const std::vector<std::string>& a) {
         }
         if(!keyboard || keyboard->colors.empty()) {
             std::fprintf(stderr,
-                         "error: %s reported no 0x8080 keyboard key IDs\n", keyboardName);
+                         "error: %s reported no 0x8080 keyboard key IDs\n", keyboardName.c_str());
             return 1;
         }
 
@@ -530,7 +550,7 @@ int runLogitech(const std::vector<std::string>& a) {
             "(device reports %u).\n"
             "Physical key set comes from Logitech LGS resources %s.\n"
             "Each key is lit at full intensity. Enter=next, r=repeat, q=quit.\n\n",
-            keyboardName, selectedGeometry->name,
+            keyboardName.c_str(), selectedGeometry->name,
             keyboard->colors.size(), verifyIds.size(),
             static_cast<unsigned>(keyboard->keyCount),
             selectedGeometry->sources);
@@ -636,15 +656,15 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         if(!media || media->colors.empty()) {
-            std::fprintf(stderr, "error: %s reported no media/control IDs\n", keyboardName);
+            std::fprintf(stderr, "error: %s reported no media/control IDs\n", keyboardName.c_str());
             return 1;
         }
         if(!indicators || indicators->colors.empty()) {
-            std::fprintf(stderr, "error: %s reported no indicator IDs\n", keyboardName);
+            std::fprintf(stderr, "error: %s reported no indicator IDs\n", keyboardName.c_str());
             return 1;
         }
         if(!logo || logo->colors.empty()) {
-            std::fprintf(stderr, "error: %s reported no logo IDs\n", keyboardName);
+            std::fprintf(stderr, "error: %s reported no logo IDs\n", keyboardName.c_str());
             return 1;
         }
 
@@ -656,7 +676,7 @@ int runLogitech(const std::vector<std::string>& a) {
             "Tests media, lighting/game controls, lock-status LEDs and logo.\n"
             "All tested groups are cleared first; exactly one item is then lit at full intensity.\n"
             "Enter=next, r=repeat, q=quit.\n\n",
-            keyboardName,
+            keyboardName.c_str(),
             media->colors.size(), static_cast<unsigned>(media->keyCount),
             indicators->colors.size(), static_cast<unsigned>(indicators->keyCount),
             logo->colors.size(), static_cast<unsigned>(logo->keyCount));
@@ -822,7 +842,7 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
         if(!logoPresent) {
-            std::fprintf(stderr, "error: %s logo id 0x01 was not reported\n", keyboardName);
+            std::fprintf(stderr, "error: %s logo id 0x01 was not reported\n", keyboardName.c_str());
             return 1;
         }
 
@@ -897,7 +917,7 @@ int runLogitech(const std::vector<std::string>& a) {
         if(!key) {
             std::fprintf(stderr,
                          "error: key %s is not present in %s geometry %s\n",
-                         a[labelArg].c_str(), keyboardName, geometry->name);
+                         a[labelArg].c_str(), keyboardName.c_str(), geometry->name);
             return 2;
         }
 
@@ -927,7 +947,7 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         std::printf("Logitech %s %s key %s (0x%02x) -> %u,%u,%u\n",
-                    keyboardName, geometry->name, key->name,
+                    keyboardName.c_str(), geometry->name, key->name,
                     static_cast<unsigned>(key->keyId),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
@@ -995,7 +1015,7 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         std::printf("Logitech %s %s physical lighting (%zu items) -> %u,%u,%u\n",
-                    keyboardName, geometry->name,
+                    keyboardName.c_str(), geometry->name,
                     logitech::g610_g810::physicalLightingCount(*geometry),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
@@ -1052,7 +1072,7 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         std::printf("Logitech %s indicator %s -> %u,%u,%u\n",
-                    keyboardName, a[2].c_str(),
+                    keyboardName.c_str(), a[2].c_str(),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
@@ -1091,19 +1111,38 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         std::printf("Logitech %s solid -> %u,%u,%u\n",
-                    keyboardName,
+                    keyboardName.c_str(),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
         return 0;
     }
 
-    std::printf("model    : Logitech %s\n", keyboardName);
+    const auto& usb = dev.usbIdentity();
+    std::printf("model    : %s\n", keyboardName.c_str());
     std::printf("device   : %s\n", dev.path().c_str());
-    std::printf("usb      : 046d:%04x\n", static_cast<unsigned>(dev.productId()));
-    std::printf("lighting : %s\n",
-                dev.isMonochrome() ? "white per-key (intensity)"
-                                   : "RGB per-key");
+    std::printf("usb      : %04x:%04x  interface %d\n",
+                static_cast<unsigned>(usb.vendorId),
+                static_cast<unsigned>(usb.productId),
+                usb.interfaceNumber);
+    if(!usb.manufacturer.empty()) {
+        std::printf("vendor   : %s\n", usb.manufacturer.c_str());
+    }
+    if(!usb.serial.empty()) {
+        std::printf("serial   : %s\n", usb.serial.c_str());
+    }
+    const char* colorCapability = "device-reported HID++ per-key";
+    switch(dev.colorCapability()) {
+        case LogitechLightingColorCapability::Monochrome:
+            colorCapability = "white per-key (known G610 quirk)";
+            break;
+        case LogitechLightingColorCapability::Rgb:
+            colorCapability = "RGB per-key";
+            break;
+        case LogitechLightingColorCapability::Unknown:
+            break;
+    }
+    std::printf("lighting : %s\n", colorCapability);
 
     std::uint8_t major = 0;
     std::uint8_t minor = 0;
