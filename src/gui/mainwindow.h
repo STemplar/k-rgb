@@ -67,6 +67,7 @@ private:
         bool    solid;          // route through applySolid()
         bool    rainbow;        // route through applyRainbow() (per-key static rainbow)
         bool    perkey;         // route through applyPerKey() (custom per-key editor)
+        bool    zones;          // route through applyZones() (custom zone editor)
         bool    usesColor;
         bool    usesSpeed;
         bool    usesDirection;
@@ -113,6 +114,9 @@ private:
     QWidget*        perKeyPanel_    = nullptr;
     KeyboardWidget* keyboardWidget_ = nullptr;
     QLabel*         selectionLabel_ = nullptr;
+
+    QWidget*               keyboardZonePanel_ = nullptr;
+    QVector<KColorButton*>  keyboardZoneButtons_;
 
     QTabWidget*     tabs_               = nullptr;
     QWidget*        casePage_           = nullptr;
