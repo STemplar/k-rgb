@@ -697,16 +697,51 @@ int runLogitech(const std::vector<std::string>& a) {
             "  media/control keyType 0x0002: %zu discovered (reported %u)\n"
             "  indicator keyType     0x0040: %zu discovered (reported %u)\n"
             "Tests the 5 media buttons plus lighting and game-mode controls.\n"
+            "All tested controls are cleared first; exactly one is then lit RED.\n"
             "Enter=next, r=repeat, q=quit.\n\n",
             media->colors.size(), static_cast<unsigned>(media->keyCount),
             indicators->colors.size(), static_cast<unsigned>(indicators->keyCount));
 
         std::string input;
 
+        // Put both groups into a known all-black state before verification.
+        // This avoids pre-existing firmware colours (for example orange)
+        // obscuring which control is currently under test.
+        std::vector<LogitechHIDPP20KeyColor> mediaOff;
+        mediaOff.reserve(media->colors.size());
+        for(const auto& color : media->colors) {
+            mediaOff.push_back({color.keyId, 0, 0, 0});
+        }
+        if(!dev.setPerKey8080Colors(0x0002, mediaOff, &err)) {
+            std::fprintf(stderr, "error: cannot clear media controls: %s\n",
+                         err.c_str());
+            return 1;
+        }
+
+        std::vector<LogitechHIDPP20KeyColor> indicatorsOff;
+        indicatorsOff.reserve(indicators->colors.size());
+        for(const auto& color : indicators->colors) {
+            indicatorsOff.push_back({color.keyId, 0, 0, 0});
+        }
+        if(!dev.setPerKey8080Colors(0x0040, indicatorsOff, &err)) {
+            std::fprintf(stderr, "error: cannot clear indicator controls: %s\n",
+                         err.c_str());
+            return 1;
+        }
+
         // The five illuminated media buttons are protocol keyType 0x0002.
+        // Send the complete group for every step so all non-selected buttons
+        // remain black.
         for(std::size_t i = 0; i < media->colors.size(); ++i) {
             const std::uint8_t keyId = media->colors[i].keyId;
-            if(!dev.setPerKey8080Color(0x0002, keyId, 255, 0, 0, &err)) {
+            std::vector<LogitechHIDPP20KeyColor> frame;
+            frame.reserve(media->colors.size());
+            for(const auto& color : media->colors) {
+                frame.push_back({color.keyId,
+                                 static_cast<std::uint8_t>(color.keyId == keyId ? 255 : 0),
+                                 0, 0});
+            }
+            if(!dev.setPerKey8080Colors(0x0002, frame, &err)) {
                 std::fprintf(stderr, "error: cannot light media id 0x%02x: %s\n",
                              static_cast<unsigned>(keyId), err.c_str());
                 return 1;
@@ -725,11 +760,12 @@ int runLogitech(const std::vector<std::string>& a) {
                     break;
                 }
                 if(input == "q" || input == "Q") {
-                    dev.setPerKey8080Color(0x0002, keyId, 0, 0, 0, nullptr);
+                    dev.setPerKey8080Colors(0x0002, mediaOff, nullptr);
+                    dev.setPerKey8080Colors(0x0040, indicatorsOff, nullptr);
                     return 0;
                 }
                 if(input == "r" || input == "R") {
-                    if(!dev.setPerKey8080Color(0x0002, keyId, 255, 0, 0, &err)) {
+                    if(!dev.setPerKey8080Colors(0x0002, frame, &err)) {
                         std::fprintf(stderr, "error: cannot relight media id 0x%02x: %s\n",
                                      static_cast<unsigned>(keyId), err.c_str());
                         return 1;
@@ -739,9 +775,9 @@ int runLogitech(const std::vector<std::string>& a) {
                 std::printf("Use Enter, r, or q.\n");
             }
 
-            if(!dev.setPerKey8080Color(0x0002, keyId, 0, 0, 0, &err)) {
-                std::fprintf(stderr, "error: cannot clear media id 0x%02x: %s\n",
-                             static_cast<unsigned>(keyId), err.c_str());
+            if(!dev.setPerKey8080Colors(0x0002, mediaOff, &err)) {
+                std::fprintf(stderr, "error: cannot clear media controls: %s\n",
+                             err.c_str());
                 return 1;
             }
         }
@@ -803,6 +839,10 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
+        if(!dev.setPerKey8080Colors(0x0040, indicatorsOff, &err)) {
+            std::fprintf(stderr, "warning: cannot clear indicator controls: %s\n",
+                         err.c_str());
+        }
         std::printf("Control verification sequence complete.\n");
         return 0;
     }
