@@ -186,129 +186,6 @@ bool loadPerKeyFile(const std::string& path, std::vector<KeyColor>& out) {
 }
 
 
-std::string logitechG810MediaName(std::uint8_t id) {
-    switch(id) {
-        case 0xb5: return "Next track";
-        case 0xb6: return "Previous track";
-        case 0xb7: return "Stop";
-        case 0xcd: return "Play/Pause";
-        case 0xe2: return "Mute";
-        default: break;
-    }
-    char buf[40];
-    std::snprintf(buf, sizeof(buf), "UNKNOWN media ID 0x%02x",
-                  static_cast<unsigned>(id));
-    return buf;
-}
-
-std::string logitechG810IndicatorName(std::uint8_t id) {
-    switch(id) {
-        case 0x01: return "Lighting / backlight button";
-        case 0x02: return "Game-mode status/button";
-        case 0x03: return "Caps Lock indicator";
-        case 0x04: return "Scroll Lock indicator";
-        case 0x05: return "Num Lock indicator";
-        default: break;
-    }
-    char buf[40];
-    std::snprintf(buf, sizeof(buf), "UNKNOWN indicator ID 0x%02x",
-                  static_cast<unsigned>(id));
-    return buf;
-}
-
-bool logitechG810IsoEInactiveKeyId(std::uint8_t id) {
-    switch(id) {
-        case 0x31:
-        case 0x87:
-        case 0x88:
-        case 0x89:
-        case 0x8a:
-        case 0x8b:
-            return true;
-        default:
-            return false;
-    }
-}
-
-std::string logitechHidKeyName(std::uint8_t id) {
-    if(id >= 0x04 && id <= 0x1d) {
-        return std::string(1, static_cast<char>('A' + (id - 0x04)));
-    }
-    if(id >= 0x1e && id <= 0x26) {
-        return std::string(1, static_cast<char>('1' + (id - 0x1e)));
-    }
-    if(id == 0x27) {
-        return "0";
-    }
-    if(id >= 0x3a && id <= 0x45) {
-        return "F" + std::to_string(static_cast<unsigned>(id - 0x3a + 1));
-    }
-    if(id >= 0x59 && id <= 0x61) {
-        return "Keypad " + std::to_string(static_cast<unsigned>(id - 0x59 + 1));
-    }
-
-    switch(id) {
-        case 0x28: return "Enter";
-        case 0x29: return "Escape";
-        case 0x2a: return "Backspace";
-        case 0x2b: return "Tab";
-        case 0x2c: return "Space";
-        case 0x2d: return "- / _";
-        case 0x2e: return "= / +";
-        case 0x2f: return "[ / {";
-        case 0x30: return "] / }";
-        case 0x31: return "\\ / |";
-        case 0x32: return "ISO \\ / | (left of Enter)";
-        case 0x33: return "; / :";
-        case 0x34: return "' / \"";
-        case 0x35: return "` / ~";
-        case 0x36: return ", / <";
-        case 0x37: return ". / >";
-        case 0x38: return "/ / ?";
-        case 0x39: return "Caps Lock";
-        case 0x46: return "Print Screen";
-        case 0x47: return "Scroll Lock";
-        case 0x48: return "Pause/Break";
-        case 0x49: return "Insert";
-        case 0x4a: return "Home";
-        case 0x4b: return "Page Up";
-        case 0x4c: return "Delete";
-        case 0x4d: return "End";
-        case 0x4e: return "Page Down";
-        case 0x4f: return "Arrow Right";
-        case 0x50: return "Arrow Left";
-        case 0x51: return "Arrow Down";
-        case 0x52: return "Arrow Up";
-        case 0x53: return "Num Lock";
-        case 0x54: return "Keypad /";
-        case 0x55: return "Keypad *";
-        case 0x56: return "Keypad -";
-        case 0x57: return "Keypad +";
-        case 0x58: return "Keypad Enter";
-        case 0x62: return "Keypad 0";
-        case 0x63: return "Keypad .";
-        case 0x64: return "ISO \\ / | (left of Z)";
-        case 0x65: return "Application/Menu";
-        case 0x66: return "Power";
-        case 0x67: return "Keypad =";
-        case 0x87: return "International 1";
-        case 0xe0: return "Left Ctrl";
-        case 0xe1: return "Left Shift";
-        case 0xe2: return "Left Alt";
-        case 0xe3: return "Left GUI/Windows";
-        case 0xe4: return "Right Ctrl";
-        case 0xe5: return "Right Shift";
-        case 0xe6: return "Right Alt/AltGr";
-        case 0xe7: return "Right GUI/Windows";
-        default: break;
-    }
-
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "UNKNOWN (HID 0x%02x)",
-                  static_cast<unsigned>(id));
-    return buf;
-}
-
 void usageAw410k() {
     std::printf(
         "Alienware AW410K:\n"
@@ -789,10 +666,11 @@ int runLogitech(const std::vector<std::string>& a) {
             }
 
             for(;;) {
-                const std::string name = logitechG810MediaName(keyId);
+                const auto* mapped = logitech::g810::findById(logitech::g810::kMedia, keyId);
+                const char* name = mapped ? mapped->label : "UNKNOWN media ID";
                 std::printf("[media %zu/%zu] id 0x%02x -> %-28s > ",
                             i + 1, media->colors.size(),
-                            static_cast<unsigned>(keyId), name.c_str());
+                            static_cast<unsigned>(keyId), name);
                 std::fflush(stdout);
                 if(!std::getline(std::cin, input)) {
                     input = "q";
@@ -843,10 +721,11 @@ int runLogitech(const std::vector<std::string>& a) {
             }
 
             for(;;) {
-                const std::string name = logitechG810IndicatorName(keyId);
+                const auto* mapped = logitech::g810::findById(logitech::g810::kIndicators, keyId);
+                const char* name = mapped ? mapped->label : "UNKNOWN indicator ID";
                 std::printf("[indicator %zu/%zu] id 0x%02x -> %-28s > ",
                             i + 1, indicators->colors.size(),
-                            static_cast<unsigned>(keyId), name.c_str());
+                            static_cast<unsigned>(keyId), name);
                 std::fflush(stdout);
                 if(!std::getline(std::cin, input)) {
                     input = "q";
