@@ -1,4 +1,4 @@
-// KeyboardController — Qt-friendly wrapper around krgb::AW410KDevice.
+// KeyboardController — Qt-friendly wrapper around supported keyboard backends.
 //
 // Owns the device handle, polls for presence/hot-plug, and exposes apply
 // operations (solid colour, hardware effect, off). All user-facing colour
@@ -17,6 +17,13 @@ class QTimer;
 
 class KeyboardController : public QObject {
     Q_OBJECT
+
+    enum class Backend {
+        None,
+        Alienware,
+        LogitechHIDPP20,
+    };
+
 public:
     explicit KeyboardController(QObject* parent = nullptr);
     ~KeyboardController() override;
@@ -43,12 +50,6 @@ Q_SIGNALS:
     void error(const QString& message);
 
 private:
-    enum class Backend {
-        None,
-        Alienware,
-        LogitechHIDPP20,
-    };
-
     bool ensureOpen();
 
     krgb::AW410KDevice device_;
