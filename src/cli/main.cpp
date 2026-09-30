@@ -857,50 +857,62 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
-        // Verify every logo item; the G810 has a single logo at id 0x01.
-        for(std::size_t i = 0; i < logo->colors.size(); ++i) {
-            const std::uint8_t keyId = logo->colors[i].keyId;
+        // The G810 LGS resources define exactly one 0x0010 item: logo id 0x01.
+        // GetKeyColors can expose additional address slots (for example 0x02)
+        // that are part of a broader Logitech model superset but are not
+        // physically present on this G810.
+        constexpr std::uint8_t kG810LogoId = 0x01;
+        bool logoPresent = false;
+        for(const auto& color : logo->colors) {
+            if(color.keyId == kG810LogoId) {
+                logoPresent = true;
+                break;
+            }
+        }
+        if(!logoPresent) {
+            std::fprintf(stderr, "error: G810 logo id 0x01 was not reported\n");
+            return 1;
+        }
 
-            std::vector<LogitechHIDPP20KeyColor> frame;
-            frame.reserve(logo->colors.size());
-            for(const auto& color : logo->colors) {
-                frame.push_back({color.keyId,
-                                 static_cast<std::uint8_t>(color.keyId == keyId ? 255 : 0),
-                                 0, 0});
-            }
-            if(!dev.setPerKey8080Colors(0x0010, frame, &err)) {
-                std::fprintf(stderr, "error: cannot set logo id 0x%02x: %s\n",
-                             static_cast<unsigned>(keyId), err.c_str());
-                return 1;
-            }
+        std::vector<LogitechHIDPP20KeyColor> logoFrame;
+        logoFrame.reserve(logo->colors.size());
+        for(const auto& color : logo->colors) {
+            logoFrame.push_back({
+                color.keyId,
+                static_cast<std::uint8_t>(color.keyId == kG810LogoId ? 255 : 0),
+                0, 0
+            });
+        }
+        if(!dev.setPerKey8080Colors(0x0010, logoFrame, &err)) {
+            std::fprintf(stderr, "error: cannot set logo id 0x01: %s\n",
+                         err.c_str());
+            return 1;
+        }
 
-            for(;;) {
-                std::printf("[logo %zu/%zu] id 0x%02x -> Logo                         > ",
-                            i + 1, logo->colors.size(),
-                            static_cast<unsigned>(keyId));
-                std::fflush(stdout);
-                if(!std::getline(std::cin, input)) {
-                    input = "q";
-                }
-                if(input.empty()) {
-                    break;
-                }
-                if(input == "q" || input == "Q") {
-                    dev.setPerKey8080Colors(0x0002, mediaOff, nullptr);
-                    dev.setPerKey8080Colors(0x0040, indicatorsOff, nullptr);
-                    dev.setPerKey8080Colors(0x0010, logoOff, nullptr);
-                    return 0;
-                }
-                if(input == "r" || input == "R") {
-                    if(!dev.setPerKey8080Colors(0x0010, frame, &err)) {
-                        std::fprintf(stderr, "error: cannot reset logo id 0x%02x: %s\n",
-                                     static_cast<unsigned>(keyId), err.c_str());
-                        return 1;
-                    }
-                    continue;
-                }
-                std::printf("Use Enter, r, or q.\n");
+        for(;;) {
+            std::printf("[logo 1/1] id 0x01 -> Logo                         > ");
+            std::fflush(stdout);
+            if(!std::getline(std::cin, input)) {
+                input = "q";
             }
+            if(input.empty()) {
+                break;
+            }
+            if(input == "q" || input == "Q") {
+                dev.setPerKey8080Colors(0x0002, mediaOff, nullptr);
+                dev.setPerKey8080Colors(0x0040, indicatorsOff, nullptr);
+                dev.setPerKey8080Colors(0x0010, logoOff, nullptr);
+                return 0;
+            }
+            if(input == "r" || input == "R") {
+                if(!dev.setPerKey8080Colors(0x0010, logoFrame, &err)) {
+                    std::fprintf(stderr, "error: cannot reset logo id 0x01: %s\n",
+                                 err.c_str());
+                    return 1;
+                }
+                continue;
+            }
+            std::printf("Use Enter, r, or q.\n");
         }
 
         if(!dev.setPerKey8080Colors(0x0040, indicatorsOff, &err)) {
