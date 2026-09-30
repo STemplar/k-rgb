@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace krgb {
 
@@ -17,6 +18,13 @@ struct LogitechHIDPP20FeatureInfo {
     std::uint8_t index = 0;
     std::uint8_t type = 0;
     std::uint8_t version = 0;
+};
+
+struct LogitechHIDPP20KeyColor {
+    std::uint8_t keyId = 0;
+    std::uint8_t r = 0;
+    std::uint8_t g = 0;
+    std::uint8_t b = 0;
 };
 
 class LogitechHIDPP20Device {
@@ -78,6 +86,13 @@ public:
     bool setPerKey8080Color(std::uint16_t keyType, std::uint8_t keyId,
                             std::uint8_t r, std::uint8_t g, std::uint8_t b,
                             std::string* err = nullptr);
+
+    // Stage a complete set of colours for one 0x8080 keyType in a single
+    // very-long frame, then FlushLEDs once. This is important for groups such
+    // as G810 status indicators: a partial frame can clear unstaged members.
+    bool setPerKey8080Colors(std::uint16_t keyType,
+                             const std::vector<LogitechHIDPP20KeyColor>& colors,
+                             std::string* err = nullptr);
 
 private:
     using LongReport = std::array<std::uint8_t, 20>;
