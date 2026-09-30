@@ -77,11 +77,13 @@ identified and inspected without adding their PID to the protocol code first,
 provided the corresponding hidraw endpoint is accessible.
 
 The additional Logitech models above are now registered in k-rgb and have udev
-access rules, but only protocol operations supported by the discovered HID++
-features should be considered usable. G610/G810 have the currently implemented
-and tested/derived `0x8080` per-key path; the remaining models are being
-brought up through feature discovery rather than by copying a model-specific
-third-party protocol table.
+access rules. The GUI can detect these HID++ keyboards and exposes the safe
+generic solid/off path when the discovered `0x8070` and/or `0x8080`
+capabilities provide it. Model-specific GUI effects and per-key geometry stay
+disabled until their HID++ path and physical geometry are implemented. G610/G810
+have the currently implemented and tested/derived `0x8080` per-key diagnostic
+path; the remaining models are being brought up through feature discovery rather
+than by copying a model-specific third-party protocol table.
 
 ### Case / chassis lighting (experimental)
 
