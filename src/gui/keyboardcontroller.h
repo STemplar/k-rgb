@@ -33,6 +33,10 @@ public:
     QString modelName() const { return modelName_; }
     quint8  modelBit() const { return modelBit_; }  // Alienware KeyboardModel::bit
     bool    supportsAdvancedModes() const { return backend_ == Backend::Alienware; }
+    bool    supportsZoneColors() const {
+        return backend_ == Backend::LogitechHIDPP20 && logitechZoneCount_ > 1;
+    }
+    int     zoneCount() const { return logitechZoneCount_; }
 
 public Q_SLOTS:
     bool applySolid(const QColor& color, int brightnessPct);
@@ -40,6 +44,7 @@ public Q_SLOTS:
     // Per-key custom colours, keyed by key name (see keymap.h). Keys absent from
     // the map are turned off.
     bool applyPerKey(const QHash<QString, QColor>& keyColors, int brightnessPct);
+    bool applyZones(const QHash<int, QColor>& zoneColors, int brightnessPct);
     bool applyEffect(int modeValue, int speedValue, int directionValue,
                      const QColor& color, int brightnessPct);
     bool applyOff();
@@ -59,5 +64,6 @@ private:
     QString            path_;
     QString            modelName_;
     quint8             modelBit_ = 0xFF;
+    int                logitechZoneCount_ = 0;
     QTimer*            pollTimer_ = nullptr;
 };
