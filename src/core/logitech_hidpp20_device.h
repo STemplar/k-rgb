@@ -40,6 +40,13 @@ struct LogitechHIDPP20KeyColor {
     std::uint8_t b = 0;
 };
 
+struct LogitechHIDPP20ZoneColor {
+    std::uint8_t zone = 0; // zero-based logical zone index
+    std::uint8_t r = 0;
+    std::uint8_t g = 0;
+    std::uint8_t b = 0;
+};
+
 struct LogitechHIDPP20PerKeyTypeInfo {
     std::uint16_t keyType = 0;
     std::uint16_t keyCount = 0;
@@ -156,6 +163,15 @@ public:
     // discovered at runtime; neither is assumed from the G810 captures.
     bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                   std::string* err = nullptr);
+
+    // Read the number of 0x8070 lighting zones reported by the device.
+    bool getColorLed8070ZoneCount(std::uint8_t& zoneCount,
+                                  std::string* err = nullptr);
+
+    // Set individual 0x8070 zones. Input zones are zero-based logical indices;
+    // model quirks map them to protocol region IDs where required.
+    bool setColorLed8070Zones(const std::vector<LogitechHIDPP20ZoneColor>& colors,
+                              std::string* err = nullptr);
 
     // Set one addressable element through feature 0x8080 (Per Key Lighting)
     // and commit the frame. keyType/keyId are protocol-level addresses; model
