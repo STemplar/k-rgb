@@ -77,13 +77,24 @@ void KeyboardController::refresh() {
         }
     }
 
+    int newLogitechZoneCount = 0;
+    if(newBackend == Backend::LogitechHIDPP20 && logitechDevice_.isOpen()) {
+        std::uint8_t zones = 0;
+        std::string zoneErr;
+        if(logitechDevice_.getColorLed8070ZoneCount(zones, &zoneErr)) {
+            newLogitechZoneCount = static_cast<int>(zones);
+        }
+    }
+
     if(nowConnected != connected_ || newPath != path_ ||
-       newBackend != backend_ || newModelName != modelName_) {
+       newBackend != backend_ || newModelName != modelName_ ||
+       newLogitechZoneCount != logitechZoneCount_) {
         connected_ = nowConnected;
         path_ = newPath;
         modelName_ = newModelName;
         modelBit_ = newModelBit;
         backend_ = newBackend;
+        logitechZoneCount_ = newLogitechZoneCount;
 
         if(!connected_) {
             if(device_.isOpen()) {
@@ -211,6 +222,39 @@ bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, in
     }
     if(!device_.setPerKey(keys)) {
         Q_EMIT error(i18n("Failed to set per-key colours."));
+        return false;
+    }
+    return true;
+}
+
+bool KeyboardController::applyZones(
+    const QHash<int, QColor>& zoneColors, int brightnessPct) {
+
+    if(!ensureOpen()) {
+        return false;
+    }
+    if(backend_ != Backend::LogitechHIDPP20 || logitechZoneCount_ <= 0) {
+        Q_EMIT error(i18n("The connected keyboard does not expose HID++ zone lighting."));
+        return false;
+    }
+
+    const int pct = qBound(0, brightnessPct, 100);
+    std::vector<krgb::LogitechHIDPP20ZoneColor> colors;
+    colors.reserve(static_cast<std::size_t>(logitechZoneCount_));
+
+    for(int zone = 0; zone < logitechZoneCount_; ++zone) {
+        const QColor source = zoneColors.value(zone, QColor(0, 0, 0));
+        colors.push_back({
+            static_cast<std::uint8_t>(zone),
+            static_cast<std::uint8_t>(source.red() * pct / 100),
+            static_cast<std::uint8_t>(source.green() * pct / 100),
+            static_cast<std::uint8_t>(source.blue() * pct / 100),
+        });
+    }
+
+    std::string err;
+    if(!logitechDevice_.setColorLed8070Zones(colors, &err)) {
+        Q_EMIT error(QString::fromStdString(err));
         return false;
     }
     return true;
