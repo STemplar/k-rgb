@@ -654,8 +654,9 @@ int runLogitech(const std::vector<std::string>& a) {
             "  indicator keyType     0x0040: %zu discovered (reported %u)\n"
             "  logo keyType          0x0010: %zu discovered (reported %u)\n"
             "Tests media, lighting/game controls, lock-status LEDs and logo.\n"
-            "All tested groups are cleared first; exactly one item is then lit RED.\n"
+            "All tested groups are cleared first; exactly one item is then lit at full intensity.\n"
             "Enter=next, r=repeat, q=quit.\n\n",
+            keyboardName,
             media->colors.size(), static_cast<unsigned>(media->keyCount),
             indicators->colors.size(), static_cast<unsigned>(indicators->keyCount),
             logo->colors.size(), static_cast<unsigned>(logo->keyCount));
