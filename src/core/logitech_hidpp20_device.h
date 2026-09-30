@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "core/logitech_known_devices.h"
+
 namespace krgb {
 
 struct LogitechHIDPP20FeatureInfo {
@@ -50,12 +52,6 @@ struct LogitechHIDPP20PerKeyInfo {
     std::vector<LogitechHIDPP20PerKeyTypeInfo> types;
 };
 
-enum class LogitechLightingColorCapability {
-    Unknown,
-    Monochrome,
-    Rgb,
-};
-
 struct LogitechUsbIdentity {
     std::uint16_t vendorId = 0;
     std::uint16_t productId = 0;
@@ -66,13 +62,25 @@ struct LogitechUsbIdentity {
     std::string hidName;
 };
 
+struct LogitechHIDPP20LightingFeatures {
+    LogitechHIDPP20FeatureInfo brightness8040;
+    LogitechHIDPP20FeatureInfo colorLedEffects8070;
+    LogitechHIDPP20FeatureInfo rgbEffects8071;
+    LogitechHIDPP20FeatureInfo perKey8080;
+    LogitechHIDPP20FeatureInfo perKey8081;
+
+    bool hasKnownLightingFeature() const {
+        return brightness8040.index != 0 ||
+               colorLedEffects8070.index != 0 ||
+               rgbEffects8071.index != 0 ||
+               perKey8080.index != 0 ||
+               perKey8081.index != 0;
+    }
+};
+
 class LogitechHIDPP20Device {
 public:
     static constexpr std::uint16_t kVendorId = 0x046d;
-    static constexpr std::uint16_t kG610ProductId1 = 0xc333;
-    static constexpr std::uint16_t kG610ProductId2 = 0xc338;
-    static constexpr std::uint16_t kG810ProductId1 = 0xc331;
-    static constexpr std::uint16_t kG810ProductId2 = 0xc337;
 
     static constexpr std::uint8_t kShortReportId = 0x10;
     static constexpr std::uint8_t kLongReportId = 0x11;
@@ -83,6 +91,7 @@ public:
     static constexpr std::uint16_t kFeatureRoot = 0x0000;
     static constexpr std::uint16_t kFeatureSet = 0x0001;
     static constexpr std::uint16_t kFeatureDeviceInformation = 0x0003;
+    static constexpr std::uint16_t kFeatureBrightnessControl = 0x8040;
     static constexpr std::uint16_t kFeatureColorLedEffects = 0x8070;
     static constexpr std::uint16_t kFeatureRgbEffects = 0x8071;
     static constexpr std::uint16_t kFeaturePerKeyLighting = 0x8080;
@@ -113,6 +122,12 @@ public:
 
     static LogitechLightingColorCapability colorCapabilityForProductId(
         std::uint16_t productId);
+
+    // Probe the stable lighting feature IDs currently known to k-rgb. Runtime
+    // indices are always obtained through ROOT.getFeature(); they are never
+    // selected from the USB product ID.
+    bool getLightingFeatures(LogitechHIDPP20LightingFeatures& features,
+                             std::string* err = nullptr);
 
     // ROOT.getProtocolVersion(). HID++ 2.0 devices return their protocol
     // major/minor version and echo the ping byte.
@@ -171,7 +186,7 @@ private:
                        const std::uint8_t* params, std::size_t paramCount,
                        std::string* err);
     static bool parseHex(const std::string& value, int& out);
-    bool probePerKeyKeyboard(std::string* err = nullptr);
+    bool probeKeyboard(std::string* err = nullptr);
     void normalizeLightingColor(std::uint8_t& r, std::uint8_t& g,
                                 std::uint8_t& b) const;
 
