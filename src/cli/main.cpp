@@ -185,6 +185,20 @@ bool loadPerKeyFile(const std::string& path, std::vector<KeyColor>& out) {
 }
 
 
+bool logitechG810IsoEInactiveKeyId(std::uint8_t id) {
+    switch(id) {
+        case 0x31:
+        case 0x87:
+        case 0x88:
+        case 0x89:
+        case 0x8a:
+        case 0x8b:
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::string logitechHidKeyName(std::uint8_t id) {
     if(id >= 0x04 && id <= 0x1d) {
         return std::string(1, static_cast<char>('A' + (id - 0x04)));
@@ -526,21 +540,29 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
+        std::vector<std::uint8_t> verifyIds;
+        verifyIds.reserve(keyboard->colors.size());
+        for(const auto& color : keyboard->colors) {
+            if(!logitechG810IsoEInactiveKeyId(color.keyId)) {
+                verifyIds.push_back(color.keyId);
+            }
+        }
+
         std::printf(
-            "G810 key verifier: %zu discovered keyboard IDs "
-            "(device reports %u).\n"
+            "G810 ISO-E key verifier: %zu discovered, %zu visible candidates "
+            "(device reports %u; 6 known inactive IDs skipped).\n"
             "Each candidate is lit RED. Check the physical key against the "
             "console name.\n"
             "Enter=next, r=repeat, q=quit.\n\n",
-            keyboard->colors.size(),
+            keyboard->colors.size(), verifyIds.size(),
             static_cast<unsigned>(keyboard->keyCount));
 
         std::uint8_t activeId = 0;
         bool haveActive = false;
         std::string input;
 
-        for(std::size_t i = 0; i < keyboard->colors.size(); ++i) {
-            const std::uint8_t keyId = keyboard->colors[i].keyId;
+        for(std::size_t i = 0; i < verifyIds.size(); ++i) {
+            const std::uint8_t keyId = verifyIds[i];
 
             if(haveActive) {
                 if(!dev.setPerKey8080Color(kKeyboardKeyType, activeId,
@@ -563,7 +585,7 @@ int runLogitech(const std::vector<std::string>& a) {
             for(;;) {
                 const std::string name = logitechHidKeyName(keyId);
                 std::printf("[%3zu/%3zu] id 0x%02x -> %-30s  > ",
-                            i + 1, keyboard->colors.size(),
+                            i + 1, verifyIds.size(),
                             static_cast<unsigned>(keyId), name.c_str());
                 std::fflush(stdout);
 
