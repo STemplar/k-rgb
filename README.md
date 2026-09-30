@@ -33,12 +33,21 @@ small, fast, and dependency-light.
 
 ## Supported hardware
 
-| Device | USB ID | Interface | Per-key |
+| Device | USB ID | Interface | Current k-rgb status |
 | --- | --- | --- | --- |
-| Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | ✅ |
-| Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | ✅* |
-| Logitech G610 Orion | `046d:c333` / `046d:c338` | 1 (HID++ 2.0) | ✅† |
-| Logitech G810 Orion Spectrum | `046d:c331` / `046d:c337` | 1 (HID++ 2.0) | ✅ |
+| Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | full GUI/per-key |
+| Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | full GUI/per-key* |
+| Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G410 Atlas Spectrum | `046d:c330` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G413 Carbon | `046d:c33a` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G512 Carbon | `046d:c342` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G513 Carbon | `046d:c33c` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G610 Orion | `046d:c333` / `046d:c338` | HID++ endpoint discovered at runtime | per-key path implemented† |
+| Logitech G810 Orion Spectrum | `046d:c331` / `046d:c337` | HID++ endpoint discovered at runtime | per-key path implemented |
+| Logitech G815 LIGHTSYNC | `046d:c33f` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G910 Orion Spark | `046d:c32b` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G910 Orion Spectrum | `046d:c335` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G PRO | `046d:c339` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
 
 k-rgb **auto-detects** which model is plugged in and names it in the window and
 `krgb-cli info`. Both share the same lighting protocol and LED index map (the
@@ -57,16 +66,22 @@ G810 share the physical key/media/control address scheme; the G610 has white
 LEDs, so k-rgb collapses RGB input to a single intensity value. The G610 path
 has not yet been verified on physical G610 hardware.
 
-Logitech HID++ discovery itself is capability-based: k-rgb scans Logitech
-hidraw endpoints, verifies HID++ 2.0, requires feature `0x8080`, and reads the
-device-reported key-type bitmap/counts/IDs. Known PIDs are used only for
-model-specific quirks such as the G610's monochrome LEDs and for optional LGS
-geometry metadata. Unknown Logitech HID++ 2.0 per-key keyboards can therefore be identified
-and inspected with `krgb-cli logitech info` and
-`krgb-cli logitech perkey-info` without adding their PID to the protocol
-code first, provided the corresponding hidraw endpoint is accessible. The
-installed udev rules currently grant access only to the known tested G610/G810
-PIDs; unknown PIDs may require an explicit udev rule before non-root access.
+Logitech HID++ discovery is capability-based. k-rgb scans Logitech hidraw
+endpoints, verifies HID++ 2.0, and probes stable feature IDs such as `0x8040`,
+`0x8070`, `0x8071`, `0x8080`, and `0x8081`. For `0x8080`, the
+device-reported key-type bitmap/counts/IDs are authoritative. Known PIDs are
+used only for USB identity, udev permissions, optional geometry metadata, and
+properties that HID++ does not report (for example older monochrome-vs-RGB
+hardware). Unknown Logitech HID++ 2.0 lighting keyboards can therefore be
+identified and inspected without adding their PID to the protocol code first,
+provided the corresponding hidraw endpoint is accessible.
+
+The additional Logitech models above are now registered in k-rgb and have udev
+access rules, but only protocol operations supported by the discovered HID++
+features should be considered usable. G610/G810 have the currently implemented
+and tested/derived `0x8080` per-key path; the remaining models are being
+brought up through feature discovery rather than by copying a model-specific
+third-party protocol table.
 
 ### Case / chassis lighting (experimental)
 
