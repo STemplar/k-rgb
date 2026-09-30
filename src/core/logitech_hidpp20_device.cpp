@@ -656,6 +656,95 @@ bool LogitechHIDPP20Device::setPerKey8080Colors(
     return true;
 }
 
+bool LogitechHIDPP20Device::getFirmwareInfo(
+    std::vector<LogitechHIDPP20FirmwareInfo>& firmware,
+    std::string* err) {
+
+    firmware.clear();
+
+    LogitechHIDPP20FeatureInfo devInfo;
+    if(!getFeature(kFeatureDeviceInformation, devInfo, err)) {
+        return false;
+    }
+    if(devInfo.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x0003 (Device Information) is not supported";
+        }
+        return false;
+    }
+
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(devInfo.index, 0x00, nullptr, 0, raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 5) {
+        if(err) {
+            *err = "HID++ 0x0003 GetDeviceInfo returned a short response";
+        }
+        return false;
+    }
+
+    const std::uint8_t entityCount = raw[4];
+    firmware.reserve(entityCount);
+
+    for(std::uint8_t entity = 0; entity < entityCount; ++entity) {
+        const std::uint8_t param[1] = { entity };
+        RawReport ent{};
+        std::size_t entSize = 0;
+        if(!requestLongRaw(devInfo.index, 0x01, param, sizeof(param),
+                           ent, entSize, err)) {
+            return false;
+        }
+        if(entSize < 6) {
+            if(err) {
+                *err = "HID++ 0x0003 GetFirmwareInfo returned a short response";
+            }
+            return false;
+        }
+
+        LogitechHIDPP20FirmwareInfo item;
+        item.entity = entity;
+        item.kind = static_cast<std::uint8_t>(ent[4] & 0x0f);
+
+        if(item.kind == 0x00 || item.kind == 0x01) {
+            if(entSize < 12) {
+                if(err) {
+                    *err = "HID++ 0x0003 firmware entity payload is too short";
+                }
+                return false;
+            }
+
+            item.name.assign(reinterpret_cast<const char*>(&ent[5]), 3);
+            while(!item.name.empty() &&
+                  (item.name.back() == '\0' || item.name.back() == ' ')) {
+                item.name.pop_back();
+            }
+
+            item.major = ent[8];
+            item.minor = ent[9];
+            item.build =
+                (static_cast<std::uint16_t>(ent[10]) << 8) |
+                 static_cast<std::uint16_t>(ent[11]);
+
+            for(std::size_t i = 13; i < entSize; ++i) {
+                if(ent[i] != 0) {
+                    item.extra.assign(ent.begin() + 13, ent.begin() + entSize);
+                    break;
+                }
+            }
+        } else if(item.kind == 0x02) {
+            if(entSize >= 6) {
+                item.major = ent[5]; // Hardware revision in HID++ 0x0003.
+            }
+        }
+
+        firmware.push_back(std::move(item));
+    }
+
+    return true;
+}
+
 bool LogitechHIDPP20Device::getFeature(
     std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
     std::string* err) {
