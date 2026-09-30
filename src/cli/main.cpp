@@ -954,6 +954,42 @@ int runLogitech(const std::vector<std::string>& a) {
                 static_cast<unsigned>(major),
                 static_cast<unsigned>(minor));
 
+    std::vector<LogitechHIDPP20FirmwareInfo> fw;
+    if(dev.getFirmwareInfo(fw, &err)) {
+        for(const auto& item : fw) {
+            const char* kind = "other";
+            if(item.kind == 0x00) kind = "firmware";
+            else if(item.kind == 0x01) kind = "bootloader";
+            else if(item.kind == 0x02) kind = "hardware";
+
+            if(item.kind == 0x00 || item.kind == 0x01) {
+                std::printf("%-9s: entity %u  %s %02X.%02X",
+                            kind,
+                            static_cast<unsigned>(item.entity),
+                            item.name.empty() ? "" : item.name.c_str(),
+                            static_cast<unsigned>(item.major),
+                            static_cast<unsigned>(item.minor));
+                if(item.build) {
+                    std::printf(".B%04X", static_cast<unsigned>(item.build));
+                }
+                std::printf("\n");
+            } else if(item.kind == 0x02) {
+                std::printf("%-9s: entity %u  revision %u\n",
+                            kind,
+                            static_cast<unsigned>(item.entity),
+                            static_cast<unsigned>(item.major));
+            } else {
+                std::printf("%-9s: entity %u  type 0x%02x\n",
+                            kind,
+                            static_cast<unsigned>(item.entity),
+                            static_cast<unsigned>(item.kind));
+            }
+        }
+    } else {
+        std::printf("firmware : unavailable (%s)\n", err.c_str());
+        err.clear();
+    }
+
     struct FeatureProbe {
         std::uint16_t id;
         const char* name;
