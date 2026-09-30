@@ -111,8 +111,9 @@ public:
     LogitechHIDPP20Device& operator=(const LogitechHIDPP20Device&) = delete;
 
     // Scan Logitech hidraw interfaces and select an endpoint that identifies
-    // itself as HID++ 2.0 and reports a 0x8080 keyboard lighting key type.
-    // Detection is capability-based and does not require a known USB PID.
+    // itself as HID++ 2.0 and exposes a supported lighting feature. 0x8080
+    // endpoints are proven as keyboards from their keyboard key type; other
+    // lighting families currently require a known keyboard USB identity.
     bool openKeyboard(std::string* err = nullptr);
     bool openPath(const std::string& path, std::string* err = nullptr);
     void close();
