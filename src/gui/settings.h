@@ -16,7 +16,7 @@ class KeyboardController;
 class CaseController;
 
 struct LightingSettings {
-    enum Kind { Solid, Rainbow, Effect, PerKey };
+    enum Kind { Solid, Rainbow, Effect, PerKey, Zones };
 
     Kind   kind       = Solid;
     int    effectMode = 0;  // krgb::Mode value, used when kind == Effect
@@ -28,6 +28,10 @@ struct LightingSettings {
     // Per-key colours, keyed by key name (see keymap.h). Used when kind == PerKey.
     // Keys absent from the map are treated as off (black).
     QHash<QString, QColor> keyColors;
+
+    // Keyboard zone colours for HID++ zone-based keyboards such as G213.
+    // Keys are zero-based logical zone indices reported by the device.
+    QHash<int, QColor> keyboardZoneColors;
 
     // Case / chassis lighting (AW-ELC controller). caseSet means this profile
     // manages the case. casePerZone selects per-zone colours (caseZoneColors,
