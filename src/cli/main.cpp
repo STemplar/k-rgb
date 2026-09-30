@@ -223,7 +223,8 @@ void usageLogitech() {
         "  krgb-cli logitech verify-controls verify media, controls, status LEDs and logo\n"
         "  krgb-cli logitech key GEOMETRY LABEL R G B set one physical keyboard LED\n"
         "  krgb-cli logitech perkey-solid GEOMETRY R G B set all physical lighting items\n"
-        "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
+        "  krgb-cli logitech solid R G B set all reported lighting elements/zones\n"
+        "  krgb-cli logitech zone N R G B set one 0x8070 zone (N starts at 1)\n"
         "  krgb-cli logitech indicator NAME R G B\n"
         "    NAME: backlight|game|caps|scroll|num\n");
 }
@@ -353,7 +354,7 @@ int runLogitech(const std::vector<std::string>& a) {
     if(sub != "info" && sub != "perkey-info" && sub != "layouts" &&
        sub != "verify-keys" && sub != "verify-controls" &&
        sub != "key" && sub != "perkey-solid" &&
-       sub != "solid" && sub != "indicator") {
+       sub != "solid" && sub != "zone" && sub != "indicator") {
         usageLogitech();
         return 2;
     }
@@ -1079,6 +1080,69 @@ int runLogitech(const std::vector<std::string>& a) {
         return 0;
     }
 
+    if(sub == "zone") {
+        if(a.size() != 6) {
+            usageLogitech();
+            return 2;
+        }
+
+        char* end = nullptr;
+        errno = 0;
+        const long zoneNumber = std::strtol(a[2].c_str(), &end, 0);
+        if(end == a[2].c_str() || *end != '\0' || errno != 0 ||
+           zoneNumber < 1 || zoneNumber > 255) {
+            std::fprintf(stderr, "error: zone must be within 1..255\n");
+            return 2;
+        }
+
+        auto parseChannel = [](const std::string& value, std::uint8_t& out) {
+            char* end = nullptr;
+            errno = 0;
+            const long parsed = std::strtol(value.c_str(), &end, 0);
+            if(end == value.c_str() || *end != '\0' || errno != 0 ||
+               parsed < 0 || parsed > 255) {
+                return false;
+            }
+            out = static_cast<std::uint8_t>(parsed);
+            return true;
+        };
+
+        std::uint8_t r = 0, g = 0, b = 0;
+        if(!parseChannel(a[3], r) ||
+           !parseChannel(a[4], g) ||
+           !parseChannel(a[5], b)) {
+            std::fprintf(stderr, "error: RGB values must be within 0..255\n");
+            return 2;
+        }
+
+        std::uint8_t zoneCount = 0;
+        if(!dev.getColorLed8070ZoneCount(zoneCount, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+        if(zoneNumber > zoneCount) {
+            std::fprintf(stderr, "error: device reports %u zones\n",
+                         static_cast<unsigned>(zoneCount));
+            return 2;
+        }
+
+        const std::vector<LogitechHIDPP20ZoneColor> colors{{
+            static_cast<std::uint8_t>(zoneNumber - 1), r, g, b
+        }};
+        if(!dev.setColorLed8070Zones(colors, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        std::printf("Logitech %s zone %ld/%u -> %u,%u,%u\n",
+                    keyboardName.c_str(), zoneNumber,
+                    static_cast<unsigned>(zoneCount),
+                    static_cast<unsigned>(r),
+                    static_cast<unsigned>(g),
+                    static_cast<unsigned>(b));
+        return 0;
+    }
+
     if(sub == "solid") {
         if(a.size() != 5) {
             usageLogitech();
@@ -1218,6 +1282,16 @@ int runLogitech(const std::vector<std::string>& a) {
                         static_cast<unsigned>(info.index),
                         static_cast<unsigned>(info.type),
                         static_cast<unsigned>(info.version));
+        }
+    }
+
+    LogitechHIDPP20FeatureInfo zoneFeature;
+    if(dev.getFeature(LogitechHIDPP20Device::kFeatureColorLedEffects,
+                      zoneFeature, &err) && zoneFeature.index != 0) {
+        std::uint8_t zones = 0;
+        if(dev.getColorLed8070ZoneCount(zones, &err)) {
+            std::printf("0x8070 zones                 : %u\n",
+                        static_cast<unsigned>(zones));
         }
     }
     return 0;
