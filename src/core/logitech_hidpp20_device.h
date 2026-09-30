@@ -66,6 +66,12 @@ public:
     bool getFeature(std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
                     std::string* err = nullptr);
 
+    // Set every firmware lighting zone to one static colour through feature
+    // 0x8070 (Color LED Effects). Zone count and the static-effect index are
+    // discovered at runtime; neither is assumed from the G810 captures.
+    bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b,
+                  std::string* err = nullptr);
+
 private:
     using LongReport = std::array<std::uint8_t, 20>;
 
