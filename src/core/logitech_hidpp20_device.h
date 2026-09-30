@@ -1,9 +1,9 @@
 // LogitechHIDPP20Device — low-level HID++ 2.0 transport and feature discovery.
 //
-// Logitech HID++ 2.0 transport used by the G610/G810 keyboard family.
-// HID++ 2.0 is feature-based: ROOT (0x0000) maps stable 16-bit feature IDs to
-// runtime feature indices. Lighting support is therefore discovered instead
-// of hard-coding the index observed on one keyboard.
+// Generic Logitech HID++ 2.0 keyboard transport.
+// USB descriptors identify the attached product; HID++ feature discovery and
+// the device-reported lighting topology determine what can actually be driven.
+// Known product IDs are used only for quirks that HID++ does not describe.
 #pragma once
 
 #include <array>
@@ -50,10 +50,20 @@ struct LogitechHIDPP20PerKeyInfo {
     std::vector<LogitechHIDPP20PerKeyTypeInfo> types;
 };
 
-enum class LogitechKeyboardModel {
+enum class LogitechLightingColorCapability {
     Unknown,
-    G610,
-    G810,
+    Monochrome,
+    Rgb,
+};
+
+struct LogitechUsbIdentity {
+    std::uint16_t vendorId = 0;
+    std::uint16_t productId = 0;
+    int interfaceNumber = -1;
+    std::string manufacturer;
+    std::string product;
+    std::string serial;
+    std::string hidName;
 };
 
 class LogitechHIDPP20Device {
@@ -63,7 +73,6 @@ public:
     static constexpr std::uint16_t kG610ProductId2 = 0xc338;
     static constexpr std::uint16_t kG810ProductId1 = 0xc331;
     static constexpr std::uint16_t kG810ProductId2 = 0xc337;
-    static constexpr int kLightingInterface = 1;
 
     static constexpr std::uint8_t kShortReportId = 0x10;
     static constexpr std::uint8_t kLongReportId = 0x11;
@@ -84,24 +93,26 @@ public:
     LogitechHIDPP20Device(const LogitechHIDPP20Device&) = delete;
     LogitechHIDPP20Device& operator=(const LogitechHIDPP20Device&) = delete;
 
-    // Locate a supported G610/G810 HID++ lighting interface. Returns "" when
-    // none is present. Optional outputs identify the matched USB PID/model.
-    static std::string findKeyboardDevicePath(
-        std::uint16_t* productId = nullptr,
-        LogitechKeyboardModel* model = nullptr);
-
+    // Scan Logitech hidraw interfaces and select an endpoint that identifies
+    // itself as HID++ 2.0 and reports a 0x8080 keyboard lighting key type.
+    // Detection is capability-based and does not require a known USB PID.
     bool openKeyboard(std::string* err = nullptr);
     bool openPath(const std::string& path, std::string* err = nullptr);
     void close();
 
     bool isOpen() const { return fd_ >= 0; }
     const std::string& path() const { return path_; }
-    std::uint16_t productId() const { return productId_; }
-    LogitechKeyboardModel model() const { return modelForProductId(productId_); }
-    bool isMonochrome() const { return model() == LogitechKeyboardModel::G610; }
+    const LogitechUsbIdentity& usbIdentity() const { return usbIdentity_; }
+    std::uint16_t productId() const { return usbIdentity_.productId; }
+    std::string displayName() const;
 
-    static LogitechKeyboardModel modelForProductId(std::uint16_t productId);
-    static const char* modelName(LogitechKeyboardModel model);
+    LogitechLightingColorCapability colorCapability() const;
+    bool isMonochrome() const {
+        return colorCapability() == LogitechLightingColorCapability::Monochrome;
+    }
+
+    static LogitechLightingColorCapability colorCapabilityForProductId(
+        std::uint16_t productId);
 
     // ROOT.getProtocolVersion(). HID++ 2.0 devices return their protocol
     // major/minor version and echo the ping byte.
@@ -160,12 +171,13 @@ private:
                        const std::uint8_t* params, std::size_t paramCount,
                        std::string* err);
     static bool parseHex(const std::string& value, int& out);
+    bool probePerKeyKeyboard(std::string* err = nullptr);
     void normalizeLightingColor(std::uint8_t& r, std::uint8_t& g,
                                 std::uint8_t& b) const;
 
     int fd_ = -1;
     std::string path_;
-    std::uint16_t productId_ = 0;
+    LogitechUsbIdentity usbIdentity_;
 };
 
 } // namespace krgb
