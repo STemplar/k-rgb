@@ -1,9 +1,13 @@
-// Logitech G610/G810 shared physical lighting definitions.
+// Logitech G610/G810 shared physical lighting definitions plus provisional
+// G PRO (046d:c339) TKL geometries.
 //
 // Sources: Logitech Gaming Software G610/G810 SVG/XML resources and their
-// PerKeyLightingDefaults.txt files. The two models share the same basic
-// keyboard/media/control address scheme; regional printed legends are not
-// represented here because lighting control only needs physical key sets.
+// PerKeyLightingDefaults.txt files. G PRO TKL sets are inferred from the
+// G610/G810 ANSI/ISO keyboard address sets by removing the 17-key numpad.
+// G PRO protocol compatibility is supported by independent third-party reverse
+// engineering, but remains hardware-unverified in k-rgb. Regional printed
+// legends are not represented here because lighting control only needs
+// physical key sets.
 //
 // HID++ 0x8080 can expose a broader Logitech address superset than a physical
 // keyboard contains. The geometry tables below select the physically present
@@ -175,6 +179,24 @@ inline constexpr std::array<std::uint8_t, 104> kAnsi104Ids = {{
     0x5d, 0x5e, 0x59, 0x5a, 0x5b, 0x58, 0x62, 0x63
 }};
 
+inline constexpr std::array<std::uint8_t, 87> kAnsi87TklIds = {{
+    0x29, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+    0x35, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x2d, 0x2e, 0x2a, 0x2b, 0x14,
+    0x1a, 0x08, 0x15, 0x17, 0x1c, 0x18, 0x0c, 0x12, 0x13, 0x2f, 0x30, 0x31, 0x39, 0x04, 0x16, 0x07,
+    0x09, 0x0a, 0x0b, 0x0d, 0x0e, 0x0f, 0x33, 0x34, 0x28, 0xe1, 0x1d, 0x1b, 0x06, 0x19, 0x05, 0x11,
+    0x10, 0x36, 0x37, 0x38, 0xe5, 0xe0, 0xe3, 0xe2, 0x2c, 0xe6, 0xe7, 0x65, 0xe4, 0x49, 0x4a, 0x4b,
+    0x4c, 0x4d, 0x4e, 0x52, 0x50, 0x51, 0x4f
+}};
+
+inline constexpr std::array<std::uint8_t, 88> kIso88TklIds = {{
+    0x29, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+    0x35, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x2d, 0x2e, 0x2a, 0x2b, 0x14,
+    0x1a, 0x08, 0x15, 0x17, 0x1c, 0x18, 0x0c, 0x12, 0x13, 0x2f, 0x30, 0x28, 0x39, 0x04, 0x16, 0x07,
+    0x09, 0x0a, 0x0b, 0x0d, 0x0e, 0x0f, 0x33, 0x34, 0x32, 0xe1, 0x64, 0x1d, 0x1b, 0x06, 0x19, 0x05,
+    0x11, 0x10, 0x36, 0x37, 0x38, 0xe5, 0xe0, 0xe3, 0xe2, 0x2c, 0xe6, 0xe7, 0x65, 0xe4, 0x49, 0x4a,
+    0x4b, 0x4c, 0x4d, 0x4e, 0x52, 0x50, 0x51, 0x4f
+}};
+
 inline constexpr std::array<std::uint8_t, 104> kIntl104Ids = {{
     0x29, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
     0x35, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x2d, 0x2e, 0x2a, 0x2b, 0x14,
@@ -208,7 +230,8 @@ inline constexpr std::array<std::uint8_t, 106> kKor106Ids = {{
 enum : std::uint8_t {
     kModelG610 = 0x01,
     kModelG810 = 0x02,
-    kModelBoth = kModelG610 | kModelG810,
+    kModelGPro = 0x04,
+    kModelG610G810 = kModelG610 | kModelG810,
 };
 
 struct KeyboardGeometry {
@@ -216,29 +239,35 @@ struct KeyboardGeometry {
     const char* sources;   // LGS SVG resources with this physical key set.
     const std::uint8_t* keyIds;
     std::size_t keyCount;
-    std::uint8_t models;   // kModelG610 / kModelG810 bitmask.
+    std::uint8_t models;   // kModelG610 / kModelG810 / kModelGPro bitmask.
 };
 
 // Five unique physical key sets occur across the shipped G610/G810 SVG
-// resources. Most regional resources collapse into ANSI104, ISO105 or
-// INTL104; JIS108 is shared, while KOR106 occurs only in the G810 resources.
-inline constexpr std::array<KeyboardGeometry, 5> kGeometries = {{
+// resources. ANSI87/ISO88 are provisional G PRO TKL sets inferred by removing
+// the standard 17-key numeric keypad from the corresponding full-size set.
+inline constexpr std::array<KeyboardGeometry, 7> kGeometries = {{
     { "ANSI104",
       "G610_CHT/KOR/THAI/US + G810_CHT/THAI/US",
-      kAnsi104Ids.data(), kAnsi104Ids.size(), kModelBoth },
+      kAnsi104Ids.data(), kAnsi104Ids.size(), kModelG610G810 },
     { "ISO105",
       "G610_DEU/ESP/FRA/INTL/ITA/NORDIC/PIDC333_INTL/SW/TUR/UK + "
       "G810_DEU/FRA/INTL/ITA/NORDIC/PIDC331_INTL/RU/SW/TUR/UK",
-      kIso105Ids.data(), kIso105Ids.size(), kModelBoth },
+      kIso105Ids.data(), kIso105Ids.size(), kModelG610G810 },
     { "JIS108",
       "G610_JPN + G810_JPN",
-      kJpn108Ids.data(), kJpn108Ids.size(), kModelBoth },
+      kJpn108Ids.data(), kJpn108Ids.size(), kModelG610G810 },
     { "KOR106",
       "G810_KOR",
       kKor106Ids.data(), kKor106Ids.size(), kModelG810 },
     { "INTL104",
       "G610_INTL2/PIDC338_INTL/RU + G810_PIDC337_INTL",
-      kIntl104Ids.data(), kIntl104Ids.size(), kModelBoth },
+      kIntl104Ids.data(), kIntl104Ids.size(), kModelG610G810 },
+    { "ANSI87",
+      "G PRO c339 provisional: G610/G810 ANSI104 minus 17-key numpad",
+      kAnsi87TklIds.data(), kAnsi87TklIds.size(), kModelGPro },
+    { "ISO88",
+      "G PRO c339 provisional: G610/G810 ISO105 minus 17-key numpad",
+      kIso88TklIds.data(), kIso88TklIds.size(), kModelGPro },
 }};
 
 inline bool geometrySupportsModel(const KeyboardGeometry& geometry,
