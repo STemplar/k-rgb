@@ -71,6 +71,7 @@ void writeInto(KConfigGroup& g, const LightingSettings& s) {
     g.writeEntry("direction", s.direction);
     g.writeEntry("brightness", s.brightness);
     g.writeEntry("keyColors", encodeKeyColors(s.keyColors));
+    g.writeEntry("keyboardZoneColors", encodeZoneColors(s.keyboardZoneColors));
     g.writeEntry("caseSet", s.caseSet);
     g.writeEntry("casePerZone", s.casePerZone);
     g.writeEntry("caseColor", s.caseColor);
@@ -86,6 +87,8 @@ LightingSettings readFrom(const KConfigGroup& g) {
     s.direction  = g.readEntry("direction", s.direction);
     s.brightness = g.readEntry("brightness", s.brightness);
     s.keyColors  = decodeKeyColors(g.readEntry("keyColors", QStringList()));
+    s.keyboardZoneColors =
+        decodeZoneColors(g.readEntry("keyboardZoneColors", QStringList()));
     s.caseSet      = g.readEntry("caseSet", s.caseSet);
     s.casePerZone  = g.readEntry("casePerZone", s.casePerZone);
     s.caseColor    = g.readEntry("caseColor", s.caseColor);
@@ -152,6 +155,7 @@ bool LightingSettings::apply(KeyboardController& controller, CaseController* cas
         case Rainbow: return controller.applyRainbow(brightness);
         case Effect:  return controller.applyEffect(effectMode, speed, direction, color, brightness);
         case PerKey:  return controller.applyPerKey(keyColors, brightness);
+        case Zones:    return controller.applyZones(keyboardZoneColors, brightness);
     }
     return false;
 }
