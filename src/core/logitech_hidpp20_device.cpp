@@ -247,6 +247,30 @@ bool LogitechHIDPP20Device::requestLong(
     return false;
 }
 
+bool LogitechHIDPP20Device::getProtocolVersion(
+    std::uint8_t& major, std::uint8_t& minor, std::string* err) {
+
+    // IRoot function 1. The two leading zero bytes plus a ping value follow
+    // Logitech's HID++ 2.0 protocol-version request definition.
+    constexpr std::uint8_t kPing = 0xa5;
+    const std::uint8_t params[3] = {0x00, 0x00, kPing};
+
+    LongReport response{};
+    if(!requestLong(0x00, 0x01, params, sizeof(params), response, err)) {
+        return false;
+    }
+    if(response[6] != kPing) {
+        if(err) {
+            *err = "HID++ protocol-version ping mismatch";
+        }
+        return false;
+    }
+
+    major = response[4];
+    minor = response[5];
+    return true;
+}
+
 bool LogitechHIDPP20Device::getFeature(
     std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
     std::string* err) {
