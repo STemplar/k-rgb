@@ -185,6 +185,36 @@ bool loadPerKeyFile(const std::string& path, std::vector<KeyColor>& out) {
 }
 
 
+std::string logitechG810MediaName(std::uint8_t id) {
+    switch(id) {
+        case 0xb5: return "Next track";
+        case 0xb6: return "Previous track";
+        case 0xb7: return "Stop";
+        case 0xcd: return "Play/Pause";
+        case 0xe2: return "Mute";
+        default: break;
+    }
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "UNKNOWN media ID 0x%02x",
+                  static_cast<unsigned>(id));
+    return buf;
+}
+
+std::string logitechG810IndicatorName(std::uint8_t id) {
+    switch(id) {
+        case 0x01: return "Lighting / backlight button";
+        case 0x02: return "Game-mode status/button";
+        case 0x03: return "Caps Lock indicator";
+        case 0x04: return "Scroll Lock indicator";
+        case 0x05: return "Num Lock indicator";
+        default: break;
+    }
+    char buf[40];
+    std::snprintf(buf, sizeof(buf), "UNKNOWN indicator ID 0x%02x",
+                  static_cast<unsigned>(id));
+    return buf;
+}
+
 bool logitechG810IsoEInactiveKeyId(std::uint8_t id) {
     switch(id) {
         case 0x31:
@@ -311,6 +341,7 @@ void usageLogitech() {
         "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
         "  krgb-cli logitech verify-keys interactively verify keyboard IDs against HID names\n"
+        "  krgb-cli logitech verify-controls verify 5 media + lighting/game controls\n"
         "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
         "  krgb-cli logitech indicator NAME R G B\n"
         "    NAME: backlight|game|caps|scroll|num\n");
@@ -439,7 +470,7 @@ int runCase(const std::vector<std::string>& a) {
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
     if(sub != "info" && sub != "perkey-info" &&
-       sub != "verify-keys" &&
+       sub != "verify-keys" && sub != "verify-controls" &&
        sub != "solid" && sub != "indicator") {
         usageLogitech();
         return 2;
@@ -627,6 +658,152 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         std::printf("Verification sequence complete.\n");
+        return 0;
+    }
+
+    if(sub == "verify-controls") {
+        if(a.size() != 2) {
+            usageLogitech();
+            return 2;
+        }
+
+        LogitechHIDPP20PerKeyInfo info;
+        if(!dev.getPerKey8080Info(info, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        const LogitechHIDPP20PerKeyTypeInfo* media = nullptr;
+        const LogitechHIDPP20PerKeyTypeInfo* indicators = nullptr;
+        for(const auto& type : info.types) {
+            if(type.keyType == 0x0002) {
+                media = &type;
+            } else if(type.keyType == 0x0040) {
+                indicators = &type;
+            }
+        }
+
+        if(!media || media->colors.empty()) {
+            std::fprintf(stderr, "error: G810 reported no media/control IDs\n");
+            return 1;
+        }
+        if(!indicators || indicators->colors.empty()) {
+            std::fprintf(stderr, "error: G810 reported no indicator IDs\n");
+            return 1;
+        }
+
+        std::printf(
+            "G810 control verifier\n"
+            "  media/control keyType 0x0002: %zu discovered (reported %u)\n"
+            "  indicator keyType     0x0040: %zu discovered (reported %u)\n"
+            "Tests the 5 media buttons plus lighting and game-mode controls.\n"
+            "Enter=next, r=repeat, q=quit.\n\n",
+            media->colors.size(), static_cast<unsigned>(media->keyCount),
+            indicators->colors.size(), static_cast<unsigned>(indicators->keyCount));
+
+        std::string input;
+
+        // The five illuminated media buttons are protocol keyType 0x0002.
+        for(std::size_t i = 0; i < media->colors.size(); ++i) {
+            const std::uint8_t keyId = media->colors[i].keyId;
+            if(!dev.setPerKey8080Color(0x0002, keyId, 255, 0, 0, &err)) {
+                std::fprintf(stderr, "error: cannot light media id 0x%02x: %s\n",
+                             static_cast<unsigned>(keyId), err.c_str());
+                return 1;
+            }
+
+            for(;;) {
+                const std::string name = logitechG810MediaName(keyId);
+                std::printf("[media %zu/%zu] id 0x%02x -> %-28s > ",
+                            i + 1, media->colors.size(),
+                            static_cast<unsigned>(keyId), name.c_str());
+                std::fflush(stdout);
+                if(!std::getline(std::cin, input)) {
+                    input = "q";
+                }
+                if(input.empty()) {
+                    break;
+                }
+                if(input == "q" || input == "Q") {
+                    dev.setPerKey8080Color(0x0002, keyId, 0, 0, 0, nullptr);
+                    return 0;
+                }
+                if(input == "r" || input == "R") {
+                    if(!dev.setPerKey8080Color(0x0002, keyId, 255, 0, 0, &err)) {
+                        std::fprintf(stderr, "error: cannot relight media id 0x%02x: %s\n",
+                                     static_cast<unsigned>(keyId), err.c_str());
+                        return 1;
+                    }
+                    continue;
+                }
+                std::printf("Use Enter, r, or q.\n");
+            }
+
+            if(!dev.setPerKey8080Color(0x0002, keyId, 0, 0, 0, &err)) {
+                std::fprintf(stderr, "error: cannot clear media id 0x%02x: %s\n",
+                             static_cast<unsigned>(keyId), err.c_str());
+                return 1;
+            }
+        }
+
+        // IDs 1 and 2 of keyType 0x0040 are the physical lighting and
+        // game-mode controls. IDs 3..5 are Caps/Scroll/Num status indicators.
+        const std::uint8_t controlIndicatorIds[] = {0x01, 0x02};
+        for(std::size_t i = 0; i < 2; ++i) {
+            const std::uint8_t keyId = controlIndicatorIds[i];
+            bool present = false;
+            for(const auto& color : indicators->colors) {
+                if(color.keyId == keyId) {
+                    present = true;
+                    break;
+                }
+            }
+            if(!present) {
+                std::printf("[control %zu/2] id 0x%02x -> not reported by device\n",
+                            i + 1, static_cast<unsigned>(keyId));
+                continue;
+            }
+
+            std::vector<LogitechHIDPP20KeyColor> frame;
+            frame.reserve(indicators->colors.size());
+            for(const auto& color : indicators->colors) {
+                frame.push_back({color.keyId,
+                                 static_cast<std::uint8_t>(color.keyId == keyId ? 255 : 0),
+                                 0, 0});
+            }
+            if(!dev.setPerKey8080Colors(0x0040, frame, &err)) {
+                std::fprintf(stderr, "error: cannot set indicator id 0x%02x: %s\n",
+                             static_cast<unsigned>(keyId), err.c_str());
+                return 1;
+            }
+
+            for(;;) {
+                const std::string name = logitechG810IndicatorName(keyId);
+                std::printf("[control %zu/2] id 0x%02x -> %-28s > ",
+                            i + 1, static_cast<unsigned>(keyId), name.c_str());
+                std::fflush(stdout);
+                if(!std::getline(std::cin, input)) {
+                    input = "q";
+                }
+                if(input.empty()) {
+                    break;
+                }
+                if(input == "q" || input == "Q") {
+                    return 0;
+                }
+                if(input == "r" || input == "R") {
+                    if(!dev.setPerKey8080Colors(0x0040, frame, &err)) {
+                        std::fprintf(stderr, "error: cannot reset indicator id 0x%02x: %s\n",
+                                     static_cast<unsigned>(keyId), err.c_str());
+                        return 1;
+                    }
+                    continue;
+                }
+                std::printf("Use Enter, r, or q.\n");
+            }
+        }
+
+        std::printf("Control verification sequence complete.\n");
         return 0;
     }
 
