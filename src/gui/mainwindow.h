@@ -10,6 +10,7 @@ class QCheckBox;
 class QCloseEvent;
 class QComboBox;
 class QLabel;
+class QHBoxLayout;
 class QMenu;
 class QPushButton;
 class QSlider;
@@ -84,6 +85,7 @@ private:
     void             switchToProfile(const QString& name, bool apply);
     void             refreshProfileCombo();
     void             rebuildProfilesMenu();
+    void             refreshKeyboardZoneEditor();
     LightingSettings currentSettings() const;
     void             writeAutostartEntry(const QString& path, const QString& name, const QString& args);
     QString          autostartFilePath() const;
@@ -116,6 +118,7 @@ private:
     QLabel*         selectionLabel_ = nullptr;
 
     QWidget*               keyboardZonePanel_ = nullptr;
+    QHBoxLayout*            keyboardZoneRow_   = nullptr;
     QVector<KColorButton*>  keyboardZoneButtons_;
 
     QTabWidget*     tabs_               = nullptr;
