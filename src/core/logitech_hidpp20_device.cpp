@@ -396,6 +396,20 @@ bool LogitechHIDPP20Device::setSolid(
         }
     }
 
+    // The G810 keeps the five status/backlight indicators in 0x8080 keyType
+    // 0x0040. Program the complete group to the same RGB value so inactive
+    // indicators retain their colour for the next time their status turns on.
+    const std::vector<LogitechHIDPP20KeyColor> indicators = {
+        {0x01, r, g, b}, // backlight
+        {0x02, r, g, b}, // game mode
+        {0x03, r, g, b}, // Caps Lock
+        {0x04, r, g, b}, // Scroll Lock
+        {0x05, r, g, b}, // Num Lock
+    };
+    if(!setPerKey8080Colors(0x0040, indicators, err)) {
+        return false;
+    }
+
     return true;
 }
 
@@ -428,6 +442,55 @@ bool LogitechHIDPP20Device::setPerKey8080Color(
     }
 
     // Function 5: FlushLEDs. Empty long request commits the staged colors.
+    LongReport response{};
+    if(!requestLong(perKey.index, 0x05, nullptr, 0, response, err)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool LogitechHIDPP20Device::setPerKey8080Colors(
+    std::uint16_t keyType,
+    const std::vector<LogitechHIDPP20KeyColor>& colors,
+    std::string* err) {
+
+    if(colors.empty() || colors.size() > 14) {
+        if(err) {
+            *err = "HID++ 0x8080 color group must contain 1..14 entries";
+        }
+        return false;
+    }
+
+    LogitechHIDPP20FeatureInfo perKey;
+    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+        return false;
+    }
+    if(perKey.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8080 (Per Key Lighting) is not supported";
+        }
+        return false;
+    }
+
+    std::uint8_t payload[60]{};
+    payload[0] = static_cast<std::uint8_t>(keyType >> 8);
+    payload[1] = static_cast<std::uint8_t>(keyType & 0xff);
+    payload[2] = 0x00;
+    payload[3] = static_cast<std::uint8_t>(colors.size());
+
+    std::size_t pos = 4;
+    for(const auto& color : colors) {
+        payload[pos++] = color.keyId;
+        payload[pos++] = color.r;
+        payload[pos++] = color.g;
+        payload[pos++] = color.b;
+    }
+
+    if(!writeVeryLong(perKey.index, 0x03, payload, pos, err)) {
+        return false;
+    }
+
     LongReport response{};
     if(!requestLong(perKey.index, 0x05, nullptr, 0, response, err)) {
         return false;
