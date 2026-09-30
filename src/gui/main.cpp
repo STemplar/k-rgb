@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     KAboutData about(QStringLiteral("krgb"),
                      i18n("k-rgb"),
                      QStringLiteral("0.3.0"),
-                     i18n("Control the RGB lighting on the Alienware AW410K keyboard"),
+                     i18n("Control RGB lighting on supported keyboards and lighting devices"),
                      KAboutLicense::GPL_V2,
                      i18n("© 2026 Randy Yates"));
     about.addAuthor(i18n("Randy Yates"), QString(), QStringLiteral("randyyates@gmail.com"));
