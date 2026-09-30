@@ -57,6 +57,14 @@ G810 share the physical key/media/control address scheme; the G610 has white
 LEDs, so k-rgb collapses RGB input to a single intensity value. The G610 path
 has not yet been verified on physical G610 hardware.
 
+Logitech HID++ discovery itself is capability-based: k-rgb scans Logitech
+hidraw endpoints, verifies HID++ 2.0, requires feature `0x8080`, and reads the
+device-reported key-type bitmap/counts/IDs. Known PIDs are used only for
+model-specific quirks such as the G610's monochrome LEDs and for optional LGS
+geometry metadata. Unknown Logitech HID++ 2.0 per-key keyboards can therefore
+be identified and inspected with `krgb-cli logitech info` and
+`krgb-cli logitech perkey-info` without adding their PID first.
+
 ### Case / chassis lighting (experimental)
 
 k-rgb also drives the **Alienware "AW-ELC" lighting controller** (`187c:0550` /
