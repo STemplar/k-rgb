@@ -56,6 +56,11 @@ public:
     const std::string& path() const { return path_; }
     std::uint16_t productId() const { return productId_; }
 
+    // ROOT.getProtocolVersion(). HID++ 2.0 devices return their protocol
+    // major/minor version and echo the ping byte.
+    bool getProtocolVersion(std::uint8_t& major, std::uint8_t& minor,
+                            std::string* err = nullptr);
+
     // ROOT.getFeature(featureId). A false return means transport/protocol
     // failure. A successful call with info.index == 0 means unsupported.
     bool getFeature(std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
