@@ -72,12 +72,23 @@ public:
     bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                   std::string* err = nullptr);
 
+    // Set one addressable element through feature 0x8080 (Per Key Lighting)
+    // and commit the frame. keyType/keyId are protocol-level addresses; model
+    // code is responsible for mapping physical keys/indicators to them.
+    bool setPerKey8080Color(std::uint16_t keyType, std::uint8_t keyId,
+                            std::uint8_t r, std::uint8_t g, std::uint8_t b,
+                            std::string* err = nullptr);
+
 private:
     using LongReport = std::array<std::uint8_t, 20>;
+    using VeryLongReport = std::array<std::uint8_t, 64>;
 
     bool requestLong(std::uint8_t featureIndex, std::uint8_t function,
                      const std::uint8_t* params, std::size_t paramCount,
                      LongReport& response, std::string* err);
+    bool writeVeryLong(std::uint8_t featureIndex, std::uint8_t function,
+                       const std::uint8_t* params, std::size_t paramCount,
+                       std::string* err);
     static bool parseHex(const std::string& value, int& out);
 
     int fd_ = -1;
