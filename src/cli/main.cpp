@@ -6,6 +6,7 @@
 #include "core/lightmount_device.h"
 #include "core/lightmount_effects.h"
 #include "core/lightmount_keymap.h"
+#include "core/logitech_hidpp20_device.h"
 
 #include <chrono>
 #include <cmath>
@@ -210,6 +211,12 @@ void usageCase() {
         "  krgb-cli case reset\n");
 }
 
+void usageLogitech() {
+    std::printf(
+        "Logitech HID++ 2.0:\n"
+        "  krgb-cli logitech info        probe G810 HID++ and lighting features\n");
+}
+
 void usageLightMountGeneral() {
     std::printf(
         "Light Mount General firmware effects:\n"
@@ -260,6 +267,8 @@ void usage() {
     usageCase();
     std::printf("\n");
     usageLightMount();
+    std::printf("\n");
+    usageLogitech();
 }
 
 // Handle the `case ...` subcommands against the AlienFX chassis controller.
@@ -323,6 +332,66 @@ int runCase(const std::vector<std::string>& a) {
     if(!ok) {
         std::fprintf(stderr, "error: case write failed (zones=%d)\n", dev.zoneCount());
         return 1;
+    }
+    return 0;
+}
+
+
+int runLogitech(const std::vector<std::string>& a) {
+    const std::string sub = a.size() > 1 ? a[1] : std::string();
+    if(sub != "info") {
+        usageLogitech();
+        return 2;
+    }
+
+    LogitechHIDPP20Device dev;
+    std::string err;
+    if(!dev.openG810(&err)) {
+        std::fprintf(stderr, "error: %s\n", err.c_str());
+        return 1;
+    }
+
+    std::printf("device   : %s\n", dev.path().c_str());
+    std::printf("usb      : 046d:%04x\n", static_cast<unsigned>(dev.productId()));
+
+    std::uint8_t major = 0;
+    std::uint8_t minor = 0;
+    if(!dev.getProtocolVersion(major, minor, &err)) {
+        std::fprintf(stderr, "error: %s\n", err.c_str());
+        return 1;
+    }
+    std::printf("HID++    : %u.%u\n",
+                static_cast<unsigned>(major),
+                static_cast<unsigned>(minor));
+
+    struct FeatureProbe {
+        std::uint16_t id;
+        const char* name;
+    };
+    const FeatureProbe probes[] = {
+        {LogitechHIDPP20Device::kFeatureColorLedEffects, "Color LED Effects"},
+        {LogitechHIDPP20Device::kFeatureRgbEffects, "RGB Effects"},
+        {LogitechHIDPP20Device::kFeaturePerKeyLighting, "Per Key Lighting"},
+        {LogitechHIDPP20Device::kFeaturePerKeyLighting2, "Per Key Lighting 2"},
+    };
+
+    for(const auto& probe : probes) {
+        LogitechHIDPP20FeatureInfo info;
+        if(!dev.getFeature(probe.id, info, &err)) {
+            std::fprintf(stderr, "error: feature 0x%04x probe failed: %s\n",
+                         static_cast<unsigned>(probe.id), err.c_str());
+            return 1;
+        }
+        if(info.index == 0) {
+            std::printf("0x%04x %-20s : unsupported\n",
+                        static_cast<unsigned>(probe.id), probe.name);
+        } else {
+            std::printf("0x%04x %-20s : index 0x%02x, type 0x%02x, version %u\n",
+                        static_cast<unsigned>(probe.id), probe.name,
+                        static_cast<unsigned>(info.index),
+                        static_cast<unsigned>(info.type),
+                        static_cast<unsigned>(info.version));
+        }
     }
     return 0;
 }
@@ -1268,6 +1337,10 @@ int main(int argc, char** argv) {
 
     if(cmd == "lightmount") {
         return runLightMount(a);
+    }
+
+    if(cmd == "logitech") {
+        return runLogitech(a);
     }
 
     if(cmd == "info") {
