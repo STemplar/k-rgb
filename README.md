@@ -61,9 +61,12 @@ Logitech HID++ discovery itself is capability-based: k-rgb scans Logitech
 hidraw endpoints, verifies HID++ 2.0, requires feature `0x8080`, and reads the
 device-reported key-type bitmap/counts/IDs. Known PIDs are used only for
 model-specific quirks such as the G610's monochrome LEDs and for optional LGS
-geometry metadata. Unknown Logitech HID++ 2.0 per-key keyboards can therefore
-be identified and inspected with `krgb-cli logitech info` and
-`krgb-cli logitech perkey-info` without adding their PID first.
+geometry metadata. Unknown Logitech HID++ 2.0 per-key keyboards can therefore be identified
+and inspected with `krgb-cli logitech info` and
+`krgb-cli logitech perkey-info` without adding their PID to the protocol
+code first, provided the corresponding hidraw endpoint is accessible. The
+installed udev rules currently grant access only to the known tested G610/G810
+PIDs; unknown PIDs may require an explicit udev rule before non-root access.
 
 ### Case / chassis lighting (experimental)
 
