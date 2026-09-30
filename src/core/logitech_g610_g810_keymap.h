@@ -31,7 +31,8 @@ struct LightingElement {
     const char* label;  // Human-readable physical label.
 };
 
-// Stable names/labels for the 105 addresses in the verified ISO105 set.\ninline constexpr std::array<LightingElement, 105> kBaseKeyboardDefinitions = {{
+// Stable names/labels for the 105 addresses in the verified ISO105 set.
+inline constexpr std::array<LightingElement, 105> kBaseKeyboardDefinitions = {{
     { kKeyboardKeyType, 0x29, "ESC", "Esc" },
     { kKeyboardKeyType, 0x3a, "F1", "F1" },
     { kKeyboardKeyType, 0x3b, "F2", "F2" },
