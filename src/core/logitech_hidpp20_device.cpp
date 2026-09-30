@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -34,41 +35,183 @@ bool LogitechHIDPP20Device::parseHex(const std::string& value, int& out) {
     return true;
 }
 
-LogitechKeyboardModel LogitechHIDPP20Device::modelForProductId(
-    std::uint16_t productId) {
+namespace {
+
+std::string readTextFile(const fs::path& path) {
+    std::ifstream in(path);
+    if(!in) {
+        return {};
+    }
+    std::string value;
+    std::getline(in, value);
+    while(!value.empty() &&
+          (value.back() == '\r' || value.back() == '\n' ||
+           value.back() == ' ' || value.back() == '\t')) {
+        value.pop_back();
+    }
+    return value;
+}
+
+bool parseHidUevent(const fs::path& devlink, int& vid, int& pid,
+                    std::string& hidName) {
+    std::ifstream uevent(devlink / "uevent");
+    if(!uevent) {
+        return false;
+    }
+
+    vid = -1;
+    pid = -1;
+    hidName.clear();
+
+    std::string line;
+    while(std::getline(uevent, line)) {
+        if(line.rfind("HID_ID=", 0) == 0) {
+            const std::string body = line.substr(7);
+            const auto p1 = body.find(':');
+            const auto p2 = p1 == std::string::npos
+                ? std::string::npos : body.find(':', p1 + 1);
+            if(p1 != std::string::npos && p2 != std::string::npos) {
+                char* end = nullptr;
+                errno = 0;
+                const long parsedVid =
+                    std::strtol(body.substr(p1 + 1, p2 - p1 - 1).c_str(),
+                                &end, 16);
+                if(end && *end == '\0' && errno == 0) {
+                    vid = static_cast<int>(parsedVid);
+                }
+
+                end = nullptr;
+                errno = 0;
+                const long parsedPid =
+                    std::strtol(body.substr(p2 + 1).c_str(), &end, 16);
+                if(end && *end == '\0' && errno == 0) {
+                    pid = static_cast<int>(parsedPid);
+                }
+            }
+        } else if(line.rfind("HID_NAME=", 0) == 0) {
+            hidName = line.substr(9);
+        }
+    }
+
+    return vid >= 0 && pid >= 0;
+}
+
+void fillUsbIdentity(const fs::path& realHidPath,
+                     LogitechUsbIdentity& identity) {
+    fs::path parent = realHidPath;
+    for(int depth = 0; depth < 8 && !parent.empty(); ++depth) {
+        if(identity.interfaceNumber < 0) {
+            const std::string value = readTextFile(parent / "bInterfaceNumber");
+            if(!value.empty()) {
+                char* end = nullptr;
+                errno = 0;
+                const long parsed = std::strtol(value.c_str(), &end, 16);
+                if(end && *end == '\0' && errno == 0) {
+                    identity.interfaceNumber = static_cast<int>(parsed);
+                }
+            }
+        }
+
+        if(identity.manufacturer.empty()) {
+            identity.manufacturer = readTextFile(parent / "manufacturer");
+        }
+        if(identity.product.empty()) {
+            identity.product = readTextFile(parent / "product");
+        }
+        if(identity.serial.empty()) {
+            identity.serial = readTextFile(parent / "serial");
+        }
+
+        if(!identity.manufacturer.empty() && !identity.product.empty() &&
+           identity.interfaceNumber >= 0) {
+            break;
+        }
+        parent = parent.parent_path();
+    }
+}
+
+} // namespace
+
+LogitechLightingColorCapability
+LogitechHIDPP20Device::colorCapabilityForProductId(std::uint16_t productId) {
     switch(productId) {
         case kG610ProductId1:
         case kG610ProductId2:
-            return LogitechKeyboardModel::G610;
+            return LogitechLightingColorCapability::Monochrome;
         case kG810ProductId1:
         case kG810ProductId2:
-            return LogitechKeyboardModel::G810;
+            return LogitechLightingColorCapability::Rgb;
         default:
-            return LogitechKeyboardModel::Unknown;
+            return LogitechLightingColorCapability::Unknown;
     }
 }
 
-const char* LogitechHIDPP20Device::modelName(LogitechKeyboardModel model) {
-    switch(model) {
-        case LogitechKeyboardModel::G610: return "G610";
-        case LogitechKeyboardModel::G810: return "G810";
-        default: return "Unknown Logitech keyboard";
-    }
+LogitechLightingColorCapability LogitechHIDPP20Device::colorCapability() const {
+    return colorCapabilityForProductId(usbIdentity_.productId);
 }
 
-std::string LogitechHIDPP20Device::findKeyboardDevicePath(
-    std::uint16_t* productId, LogitechKeyboardModel* model) {
-    if(productId) {
-        *productId = 0;
+std::string LogitechHIDPP20Device::displayName() const {
+    if(!usbIdentity_.product.empty()) {
+        return usbIdentity_.product;
     }
-    if(model) {
-        *model = LogitechKeyboardModel::Unknown;
+    if(!usbIdentity_.hidName.empty()) {
+        return usbIdentity_.hidName;
     }
+
+    char fallback[48]{};
+    std::snprintf(fallback, sizeof(fallback),
+                  "Logitech HID++ keyboard (046d:%04x)",
+                  static_cast<unsigned>(usbIdentity_.productId));
+    return fallback;
+}
+
+bool LogitechHIDPP20Device::probePerKeyKeyboard(std::string* err) {
+    std::uint8_t major = 0;
+    std::uint8_t minor = 0;
+    if(!getProtocolVersion(major, minor, err)) {
+        return false;
+    }
+    if(major < 2) {
+        if(err) {
+            *err = "device is not HID++ 2.0";
+        }
+        return false;
+    }
+
+    LogitechHIDPP20FeatureInfo perKey;
+    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+        return false;
+    }
+    if(perKey.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8080 is not supported";
+        }
+        return false;
+    }
+
+    LogitechHIDPP20PerKeyInfo info;
+    if(!getPerKey8080Info(info, err)) {
+        return false;
+    }
+    if((info.typeFlags & 0x0001) == 0) {
+        if(err) {
+            *err = "HID++ 0x8080 reports no keyboard key type";
+        }
+        return false;
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
+    close();
 
     const fs::path base = "/sys/class/hidraw";
     std::error_code ec;
     if(!fs::is_directory(base, ec)) {
-        return {};
+        if(err) {
+            *err = "hidraw sysfs class is unavailable";
+        }
+        return false;
     }
 
     std::vector<std::string> names;
@@ -77,86 +220,55 @@ std::string LogitechHIDPP20Device::findKeyboardDevicePath(
     }
     std::sort(names.begin(), names.end());
 
+    std::string lastProbeError;
     for(const auto& name : names) {
         const fs::path devlink = base / name / "device";
-        std::ifstream uevent(devlink / "uevent");
-        if(!uevent) {
-            continue;
-        }
 
         int vid = -1;
         int pid = -1;
-        std::string line;
-        while(std::getline(uevent, line)) {
-            if(line.rfind("HID_ID=", 0) != 0) {
-                continue;
-            }
-            const std::string body = line.substr(7);
-            const auto p1 = body.find(':');
-            const auto p2 = p1 == std::string::npos
-                ? std::string::npos : body.find(':', p1 + 1);
-            if(p1 != std::string::npos && p2 != std::string::npos) {
-                parseHex(body.substr(p1 + 1, p2 - p1 - 1), vid);
-                parseHex(body.substr(p2 + 1), pid);
-            }
-        }
-
-        if(vid != kVendorId ||
-           modelForProductId(static_cast<std::uint16_t>(pid)) ==
-               LogitechKeyboardModel::Unknown) {
+        std::string hidName;
+        if(!parseHidUevent(devlink, vid, pid, hidName) ||
+           vid != kVendorId) {
             continue;
         }
 
-        // Both G610 and G810 expose the lighting HID++ endpoint on USB
-        // interface 1. Keep the normal keyboard HID collection untouched.
+        LogitechUsbIdentity identity;
+        identity.vendorId = static_cast<std::uint16_t>(vid);
+        identity.productId = static_cast<std::uint16_t>(pid);
+        identity.hidName = hidName;
+
         const fs::path real = fs::canonical(devlink, ec);
-        if(ec) {
+        if(!ec) {
+            fillUsbIdentity(real, identity);
+        } else {
+            ec.clear();
+        }
+
+        std::string openError;
+        const std::string devicePath = std::string("/dev/") + name;
+        if(!openPath(devicePath, &openError)) {
+            lastProbeError = openError;
             continue;
         }
 
-        int ifnum = -1;
-        fs::path parent = real;
-        for(int depth = 0; depth < 4 && !parent.empty(); ++depth) {
-            std::ifstream interfaceFile(parent / "bInterfaceNumber");
-            if(interfaceFile) {
-                std::string value;
-                interfaceFile >> value;
-                parseHex(value, ifnum);
-                break;
-            }
-            parent = parent.parent_path();
-        }
-        if(ifnum != kLightingInterface) {
-            continue;
+        usbIdentity_ = identity;
+
+        std::string probeError;
+        if(probePerKeyKeyboard(&probeError)) {
+            return true;
         }
 
-        const auto matchedPid = static_cast<std::uint16_t>(pid);
-        if(productId) {
-            *productId = matchedPid;
-        }
-        if(model) {
-            *model = modelForProductId(matchedPid);
-        }
-        return std::string("/dev/") + name;
+        lastProbeError = displayName() + ": " + probeError;
+        close();
     }
 
-    return {};
-}
-
-bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
-    std::uint16_t pid = 0;
-    const std::string devicePath = findKeyboardDevicePath(&pid, nullptr);
-    if(devicePath.empty()) {
-        if(err) {
-            *err = "No supported Logitech G610/G810 HID++ interface found";
+    if(err) {
+        *err = "No Logitech HID++ 2.0 per-key keyboard found";
+        if(!lastProbeError.empty()) {
+            *err += " (last probe: " + lastProbeError + ")";
         }
-        return false;
     }
-    if(!openPath(devicePath, err)) {
-        return false;
-    }
-    productId_ = pid;
-    return true;
+    return false;
 }
 
 bool LogitechHIDPP20Device::openPath(const std::string& devicePath, std::string* err) {
@@ -181,7 +293,7 @@ void LogitechHIDPP20Device::close() {
         fd_ = -1;
     }
     path_.clear();
-    productId_ = 0;
+    usbIdentity_ = {};
 }
 
 void LogitechHIDPP20Device::normalizeLightingColor(
