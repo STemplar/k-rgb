@@ -1,9 +1,9 @@
 // LogitechHIDPP20Device — low-level HID++ 2.0 transport and feature discovery.
 //
-// The initial target is the Logitech G810 Orion Spectrum. HID++ 2.0 is
-// feature-based: ROOT (0x0000) maps stable 16-bit feature IDs to runtime
-// feature indices. Lighting support must therefore be discovered instead of
-// hard-coding the index observed on one keyboard.
+// Logitech HID++ 2.0 transport used by the G610/G810 keyboard family.
+// HID++ 2.0 is feature-based: ROOT (0x0000) maps stable 16-bit feature IDs to
+// runtime feature indices. Lighting support is therefore discovered instead
+// of hard-coding the index observed on one keyboard.
 #pragma once
 
 #include <array>
@@ -50,12 +50,20 @@ struct LogitechHIDPP20PerKeyInfo {
     std::vector<LogitechHIDPP20PerKeyTypeInfo> types;
 };
 
+enum class LogitechKeyboardModel {
+    Unknown,
+    G610,
+    G810,
+};
+
 class LogitechHIDPP20Device {
 public:
     static constexpr std::uint16_t kVendorId = 0x046d;
+    static constexpr std::uint16_t kG610ProductId1 = 0xc333;
+    static constexpr std::uint16_t kG610ProductId2 = 0xc338;
     static constexpr std::uint16_t kG810ProductId1 = 0xc331;
     static constexpr std::uint16_t kG810ProductId2 = 0xc337;
-    static constexpr int kG810Interface = 1;
+    static constexpr int kLightingInterface = 1;
 
     static constexpr std::uint8_t kShortReportId = 0x10;
     static constexpr std::uint8_t kLongReportId = 0x11;
@@ -76,17 +84,24 @@ public:
     LogitechHIDPP20Device(const LogitechHIDPP20Device&) = delete;
     LogitechHIDPP20Device& operator=(const LogitechHIDPP20Device&) = delete;
 
-    // Locate the G810 HID++ interface. Returns "" when no supported G810 is
-    // present. productId receives the matched USB PID when non-null.
-    static std::string findG810DevicePath(std::uint16_t* productId = nullptr);
+    // Locate a supported G610/G810 HID++ lighting interface. Returns "" when
+    // none is present. Optional outputs identify the matched USB PID/model.
+    static std::string findKeyboardDevicePath(
+        std::uint16_t* productId = nullptr,
+        LogitechKeyboardModel* model = nullptr);
 
-    bool openG810(std::string* err = nullptr);
+    bool openKeyboard(std::string* err = nullptr);
     bool openPath(const std::string& path, std::string* err = nullptr);
     void close();
 
     bool isOpen() const { return fd_ >= 0; }
     const std::string& path() const { return path_; }
     std::uint16_t productId() const { return productId_; }
+    LogitechKeyboardModel model() const { return modelForProductId(productId_); }
+    bool isMonochrome() const { return model() == LogitechKeyboardModel::G610; }
+
+    static LogitechKeyboardModel modelForProductId(std::uint16_t productId);
+    static const char* modelName(LogitechKeyboardModel model);
 
     // ROOT.getProtocolVersion(). HID++ 2.0 devices return their protocol
     // major/minor version and echo the ping byte.
@@ -145,6 +160,8 @@ private:
                        const std::uint8_t* params, std::size_t paramCount,
                        std::string* err);
     static bool parseHex(const std::string& value, int& out);
+    void normalizeLightingColor(std::uint8_t& r, std::uint8_t& g,
+                                std::uint8_t& b) const;
 
     int fd_ = -1;
     std::string path_;
