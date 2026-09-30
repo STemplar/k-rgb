@@ -517,16 +517,10 @@ bool LogitechHIDPP20Device::getPerKey8080Info(
         (static_cast<std::uint16_t>(raw[9]) << 8) |
          static_cast<std::uint16_t>(raw[10]);
 
-    constexpr std::uint16_t kKnownTypes[] = {
-        0x0001, // keyboard
-        0x0002, // consumer/media
-        0x0004, // G-keys
-        0x0008, // buttons
-        0x0010, // logo
-        0x0040, // indicators
-    };
-
-    for(const std::uint16_t keyType : kKnownTypes) {
+    // typeFlags is the device's authoritative key-type bitmap. Query every
+    // set bit rather than limiting discovery to types already known to k-rgb.
+    for(std::uint32_t bit = 1; bit <= 0x8000; bit <<= 1) {
+        const std::uint16_t keyType = static_cast<std::uint16_t>(bit);
         if((info.typeFlags & keyType) == 0) {
             continue;
         }
