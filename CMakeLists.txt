@@ -21,6 +21,7 @@ add_library(krgb-core STATIC
     src/core/lightmount_device.cpp
     src/core/lightmount_effects.cpp
     src/core/hid_lamp_array_device.cpp
+    src/core/logitech_hidpp20_device.cpp
     src/core/alienfx_device.cpp
 )
 target_include_directories(krgb-core PUBLIC src)
