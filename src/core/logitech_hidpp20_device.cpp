@@ -154,10 +154,14 @@ void LogitechHIDPP20Device::close() {
     productId_ = 0;
 }
 
-bool LogitechHIDPP20Device::requestLong(
+bool LogitechHIDPP20Device::requestLongRaw(
     std::uint8_t featureIndex, std::uint8_t function,
     const std::uint8_t* params, std::size_t paramCount,
-    LongReport& response, std::string* err) {
+    RawReport& response, std::size_t& responseSize,
+    std::string* err) {
+
+    response.fill(0);
+    responseSize = 0;
 
     if(fd_ < 0 || paramCount > 16) {
         if(err) {
@@ -192,8 +196,8 @@ bool LogitechHIDPP20Device::requestLong(
     pfd.fd = fd_;
     pfd.events = POLLIN;
 
-    // HID++ replies normally arrive immediately. Allow a generous timeout for
-    // loaded systems and ignore unrelated reports on the same hidraw node.
+    // Long requests can legitimately answer with a 0x12 very-long frame
+    // (notably 0x8080 GetKeyColors), so preserve the complete raw response.
     for(int attempt = 0; attempt < 8; ++attempt) {
         const int ready = ::poll(&pfd, 1, 125);
         if(ready < 0) {
@@ -225,19 +229,15 @@ bool LogitechHIDPP20Device::requestLong(
             continue;
         }
 
-        // HID++ 2.0 mirrors the software ID in the response. Match both it and
-        // the requested feature/function so asynchronous notifications cannot
-        // be mistaken for our reply.
         if(buffer[2] != featureIndex ||
            (buffer[3] & 0x0f) != kSoftwareId ||
            (buffer[3] >> 4) != function) {
             continue;
         }
 
-        response.fill(0);
-        const std::size_t copyCount = std::min<std::size_t>(
+        responseSize = std::min<std::size_t>(
             response.size(), static_cast<std::size_t>(count));
-        std::copy(buffer, buffer + copyCount, response.begin());
+        std::copy(buffer, buffer + responseSize, response.begin());
         return true;
     }
 
@@ -245,6 +245,24 @@ bool LogitechHIDPP20Device::requestLong(
         *err = "HID++ request timed out";
     }
     return false;
+}
+
+bool LogitechHIDPP20Device::requestLong(
+    std::uint8_t featureIndex, std::uint8_t function,
+    const std::uint8_t* params, std::size_t paramCount,
+    LongReport& response, std::string* err) {
+
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(featureIndex, function, params, paramCount,
+                       raw, rawSize, err)) {
+        return false;
+    }
+
+    response.fill(0);
+    const std::size_t copyCount = std::min<std::size_t>(response.size(), rawSize);
+    std::copy(raw.begin(), raw.begin() + copyCount, response.begin());
+    return true;
 }
 
 bool LogitechHIDPP20Device::writeVeryLong(
@@ -299,6 +317,145 @@ bool LogitechHIDPP20Device::getProtocolVersion(
 
     major = response[4];
     minor = response[5];
+    return true;
+}
+
+bool LogitechHIDPP20Device::getPerKey8080Info(
+    LogitechHIDPP20PerKeyInfo& info, std::string* err) {
+
+    info = {};
+
+    LogitechHIDPP20FeatureInfo perKey;
+    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+        return false;
+    }
+    if(perKey.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8080 (Per Key Lighting) is not supported";
+        }
+        return false;
+    }
+
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(perKey.index, 0x00, nullptr, 0, raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 11) {
+        if(err) {
+            *err = "HID++ 0x8080 GetInfo returned a short response";
+        }
+        return false;
+    }
+
+    info.typeFlags =
+        (static_cast<std::uint16_t>(raw[4]) << 8) |
+         static_cast<std::uint16_t>(raw[5]);
+    info.keyTypeCount =
+        (static_cast<std::uint16_t>(raw[7]) << 8) |
+         static_cast<std::uint16_t>(raw[8]);
+    info.maxKeyCount =
+        (static_cast<std::uint16_t>(raw[9]) << 8) |
+         static_cast<std::uint16_t>(raw[10]);
+
+    constexpr std::uint16_t kKnownTypes[] = {
+        0x0001, // keyboard
+        0x0002, // consumer/media
+        0x0004, // G-keys
+        0x0008, // buttons
+        0x0010, // logo
+        0x0040, // indicators
+    };
+
+    for(const std::uint16_t keyType : kKnownTypes) {
+        if((info.typeFlags & keyType) == 0) {
+            continue;
+        }
+
+        LogitechHIDPP20PerKeyTypeInfo typeInfo;
+        typeInfo.keyType = keyType;
+
+        const std::uint8_t typeQuery[2] = {
+            static_cast<std::uint8_t>(keyType >> 8),
+            static_cast<std::uint8_t>(keyType & 0xff),
+        };
+        RawReport typeRaw{};
+        std::size_t typeRawSize = 0;
+        if(!requestLongRaw(perKey.index, 0x01,
+                           typeQuery, sizeof(typeQuery),
+                           typeRaw, typeRawSize, err)) {
+            return false;
+        }
+        if(typeRawSize < 6) {
+            if(err) {
+                *err = "HID++ 0x8080 GetKeyTypeInfo returned a short response";
+            }
+            return false;
+        }
+
+        typeInfo.keyCount =
+            (static_cast<std::uint16_t>(typeRaw[4]) << 8) |
+             static_cast<std::uint16_t>(typeRaw[5]);
+
+        // Function 2 GetKeyColors pages up to 14 (keyId,R,G,B) entries.
+        // The response payload starts with a 4-byte function-specific header.
+        std::uint16_t startIndex = 0;
+        std::size_t guardPages = typeInfo.keyCount
+            ? (static_cast<std::size_t>(typeInfo.keyCount) + 13) / 14
+            : 16;
+        if(guardPages == 0) {
+            guardPages = 1;
+        }
+
+        for(std::size_t page = 0; page < guardPages; ++page) {
+            const std::uint8_t colorQuery[5] = {
+                static_cast<std::uint8_t>(keyType >> 8),
+                static_cast<std::uint8_t>(keyType & 0xff),
+                static_cast<std::uint8_t>(startIndex >> 8),
+                static_cast<std::uint8_t>(startIndex & 0xff),
+                0x00, // volatile/default persistence
+            };
+
+            RawReport colorRaw{};
+            std::size_t colorRawSize = 0;
+            if(!requestLongRaw(perKey.index, 0x02,
+                               colorQuery, sizeof(colorQuery),
+                               colorRaw, colorRawSize, err)) {
+                return false;
+            }
+            if(colorRawSize <= 8) {
+                break;
+            }
+
+            const std::size_t entries = (colorRawSize - 8) / 4;
+            std::size_t found = 0;
+            for(std::size_t e = 0; e < entries; ++e) {
+                const std::size_t pos = 8 + e * 4;
+                const std::uint8_t keyId = colorRaw[pos];
+                if(keyId == 0) {
+                    continue;
+                }
+
+                typeInfo.colors.push_back({
+                    keyId,
+                    colorRaw[pos + 1],
+                    colorRaw[pos + 2],
+                    colorRaw[pos + 3],
+                });
+                ++found;
+            }
+
+            if(found == 0 ||
+               (typeInfo.keyCount &&
+                typeInfo.colors.size() >= typeInfo.keyCount)) {
+                break;
+            }
+            startIndex = static_cast<std::uint16_t>(startIndex + 14);
+        }
+
+        info.types.push_back(std::move(typeInfo));
+    }
+
     return true;
 }
 
