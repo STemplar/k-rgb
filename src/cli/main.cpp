@@ -7,7 +7,7 @@
 #include "core/lightmount_effects.h"
 #include "core/lightmount_keymap.h"
 #include "core/logitech_hidpp20_device.h"
-#include "core/logitech_g810_keymap.h"
+#include "core/logitech_g610_g810_keymap.h"
 
 #include <chrono>
 #include <cmath>
@@ -216,9 +216,9 @@ void usageCase() {
 void usageLogitech() {
     std::printf(
         "Logitech HID++ 2.0:\n"
-        "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
+        "  krgb-cli logitech info        probe G610/G810 HID++ and lighting features\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
-        "  krgb-cli logitech layouts     list unique Logitech G810 physical geometries\n"
+        "  krgb-cli logitech layouts     list physical geometries for the connected model\n"
         "  krgb-cli logitech verify-keys GEOMETRY verify physical geometry IDs\n"
         "  krgb-cli logitech verify-controls verify media, controls, status LEDs and logo\n"
         "  krgb-cli logitech key GEOMETRY LABEL R G B set one physical keyboard LED\n"
@@ -360,18 +360,48 @@ int runLogitech(const std::vector<std::string>& a) {
 
     LogitechHIDPP20Device dev;
     std::string err;
-    if(!dev.openG810(&err)) {
+    if(!dev.openKeyboard(&err)) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
     }
+
+    const auto keyboardModel = dev.model();
+    const char* keyboardName = LogitechHIDPP20Device::modelName(keyboardModel);
+    const std::uint8_t geometryModelMask =
+        keyboardModel == LogitechKeyboardModel::G610
+            ? logitech::g610_g810::kModelG610
+            : logitech::g610_g810::kModelG810;
+
+    auto findDeviceGeometry = [&](const std::string& name) {
+        const auto* geometry = logitech::g610_g810::findGeometry(name);
+        if(!geometry) {
+            std::fprintf(stderr,
+                         "error: unknown %s geometry '%s'; use 'logitech layouts'\n",
+                         keyboardName, name.c_str());
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
+        if(!logitech::g610_g810::geometrySupportsModel(*geometry,
+                                                       geometryModelMask)) {
+            std::fprintf(stderr,
+                         "error: geometry %s is not present in the LGS %s resources\n",
+                         geometry->name, keyboardName);
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
+        return geometry;
+    };
 
     if(sub == "layouts") {
         if(a.size() != 2) {
             usageLogitech();
             return 2;
         }
-        std::printf("Logitech G810 physical geometries from LGS resources:\n");
-        for(const auto& geometry : logitech::g810::kGeometries) {
+        std::printf("Logitech %s physical geometries from LGS resources:\n",
+                    keyboardName);
+        for(const auto& geometry : logitech::g610_g810::kGeometries) {
+            if(!logitech::g610_g810::geometrySupportsModel(
+                   geometry, geometryModelMask)) {
+                continue;
+            }
             std::printf("  %-8s %3zu keys  %s\n",
                         geometry.name, geometry.keyCount, geometry.sources);
         }
@@ -429,11 +459,8 @@ int runLogitech(const std::vector<std::string>& a) {
             return 2;
         }
 
-        const auto* selectedGeometry = logitech::g810::findGeometry(a[2]);
+        const auto* selectedGeometry = findDeviceGeometry(a[2]);
         if(!selectedGeometry) {
-            std::fprintf(stderr,
-                         "error: unknown G810 geometry '%s'; use 'logitech layouts'\n",
-                         a[2].c_str());
             return 2;
         }
 
@@ -453,7 +480,7 @@ int runLogitech(const std::vector<std::string>& a) {
         }
         if(!keyboard || keyboard->colors.empty()) {
             std::fprintf(stderr,
-                         "error: G810 reported no 0x8080 keyboard key IDs\n");
+                         "error: %s reported no 0x8080 keyboard key IDs\n", keyboardName);
             return 1;
         }
 
@@ -487,7 +514,7 @@ int runLogitech(const std::vector<std::string>& a) {
             }
             if(!reported) {
                 const auto* mapped =
-                    logitech::g810::keyboardDefinitionById(expectedId);
+                    logitech::g610_g810::keyboardDefinitionById(expectedId);
                 std::fprintf(stderr,
                              "error: layout %s key 0x%02x (%s) not reported by device\n",
                              selectedGeometry->name,
@@ -499,11 +526,11 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         std::printf(
-            "G810 %s key verifier: %zu firmware addresses, %zu physical keys "
+            "%s %s key verifier: %zu firmware addresses, %zu physical keys "
             "(device reports %u).\n"
             "Physical key set comes from Logitech LGS resources %s.\n"
-            "Each key is lit RED. Enter=next, r=repeat, q=quit.\n\n",
-            selectedGeometry->name,
+            "Each key is lit at full intensity. Enter=next, r=repeat, q=quit.\n\n",
+            keyboardName, selectedGeometry->name,
             keyboard->colors.size(), verifyIds.size(),
             static_cast<unsigned>(keyboard->keyCount),
             selectedGeometry->sources);
@@ -535,7 +562,7 @@ int runLogitech(const std::vector<std::string>& a) {
 
             for(;;) {
                 const auto* mapped =
-                    logitech::g810::findKeyboardById(*selectedGeometry, keyId);
+                    logitech::g610_g810::findKeyboardById(*selectedGeometry, keyId);
                 const char* name = mapped ? mapped->label : "UNKNOWN";
                 std::printf("[%3zu/%3zu] id 0x%02x -> %-30s  > ",
                             i + 1, verifyIds.size(),
@@ -609,20 +636,20 @@ int runLogitech(const std::vector<std::string>& a) {
         }
 
         if(!media || media->colors.empty()) {
-            std::fprintf(stderr, "error: G810 reported no media/control IDs\n");
+            std::fprintf(stderr, "error: %s reported no media/control IDs\n", keyboardName);
             return 1;
         }
         if(!indicators || indicators->colors.empty()) {
-            std::fprintf(stderr, "error: G810 reported no indicator IDs\n");
+            std::fprintf(stderr, "error: %s reported no indicator IDs\n", keyboardName);
             return 1;
         }
         if(!logo || logo->colors.empty()) {
-            std::fprintf(stderr, "error: G810 reported no logo IDs\n");
+            std::fprintf(stderr, "error: %s reported no logo IDs\n", keyboardName);
             return 1;
         }
 
         std::printf(
-            "G810 control verifier\n"
+            "%s control verifier\n"
             "  media/control keyType 0x0002: %zu discovered (reported %u)\n"
             "  indicator keyType     0x0040: %zu discovered (reported %u)\n"
             "  logo keyType          0x0010: %zu discovered (reported %u)\n"
@@ -690,7 +717,7 @@ int runLogitech(const std::vector<std::string>& a) {
             }
 
             for(;;) {
-                const auto* mapped = logitech::g810::findById(logitech::g810::kMedia, keyId);
+                const auto* mapped = logitech::g610_g810::findById(logitech::g610_g810::kMedia, keyId);
                 const char* name = mapped ? mapped->label : "UNKNOWN media ID";
                 std::printf("[media %zu/%zu] id 0x%02x -> %-28s > ",
                             i + 1, media->colors.size(),
@@ -726,7 +753,7 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
-        // Verify every 0x0040 item. Logitech's G810 resources define:
+        // Verify every 0x0040 item. The G610/G810 resources define:
         // 0x01 Lighting, 0x02 Game, 0x03 Caps, 0x04 Scroll, 0x05 Num.
         for(std::size_t i = 0; i < indicators->colors.size(); ++i) {
             const std::uint8_t keyId = indicators->colors[i].keyId;
@@ -745,7 +772,7 @@ int runLogitech(const std::vector<std::string>& a) {
             }
 
             for(;;) {
-                const auto* mapped = logitech::g810::findById(logitech::g810::kIndicators, keyId);
+                const auto* mapped = logitech::g610_g810::findById(logitech::g610_g810::kIndicators, keyId);
                 const char* name = mapped ? mapped->label : "UNKNOWN indicator ID";
                 std::printf("[indicator %zu/%zu] id 0x%02x -> %-28s > ",
                             i + 1, indicators->colors.size(),
@@ -781,20 +808,20 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
-        // The G810 LGS resources define exactly one 0x0010 item: logo id 0x01.
+        // The G610/G810 LGS resources define exactly one 0x0010 item: logo id 0x01.
         // GetKeyColors can expose additional address slots (for example 0x02)
         // that are part of a broader Logitech model superset but are not
-        // physically present on this G810.
-        constexpr std::uint8_t kG810LogoId = 0x01;
+        // physically present on these models.
+        constexpr std::uint8_t kLogoId = 0x01;
         bool logoPresent = false;
         for(const auto& color : logo->colors) {
-            if(color.keyId == kG810LogoId) {
+            if(color.keyId == kLogoId) {
                 logoPresent = true;
                 break;
             }
         }
         if(!logoPresent) {
-            std::fprintf(stderr, "error: G810 logo id 0x01 was not reported\n");
+            std::fprintf(stderr, "error: %s logo id 0x01 was not reported\n", keyboardName);
             return 1;
         }
 
@@ -803,7 +830,7 @@ int runLogitech(const std::vector<std::string>& a) {
         for(const auto& color : logo->colors) {
             logoFrame.push_back({
                 color.keyId,
-                static_cast<std::uint8_t>(color.keyId == kG810LogoId ? 255 : 0),
+                static_cast<std::uint8_t>(color.keyId == kLogoId ? 255 : 0),
                 0, 0
             });
         }
@@ -857,22 +884,19 @@ int runLogitech(const std::vector<std::string>& a) {
             return 2;
         }
 
-        const auto* geometry = logitech::g810::findGeometry(a[2]);
+        const auto* geometry = findDeviceGeometry(a[2]);
         if(!geometry) {
-            std::fprintf(stderr,
-                         "error: unknown G810 geometry '%s'; use 'logitech layouts'\n",
-                         a[2].c_str());
             return 2;
         }
 
         const std::size_t labelArg = 3;
         const std::size_t rgbArg = 4;
         const auto* key =
-            logitech::g810::findKeyboardByName(*geometry, a[labelArg]);
+            logitech::g610_g810::findKeyboardByName(*geometry, a[labelArg]);
         if(!key) {
             std::fprintf(stderr,
-                         "error: key %s is not present in G810 geometry %s\n",
-                         a[labelArg].c_str(), geometry->name);
+                         "error: key %s is not present in %s geometry %s\n",
+                         a[labelArg].c_str(), keyboardName, geometry->name);
             return 2;
         }
 
@@ -901,8 +925,8 @@ int runLogitech(const std::vector<std::string>& a) {
             return 1;
         }
 
-        std::printf("Logitech G810 %s key %s (0x%02x) -> %u,%u,%u\n",
-                    geometry->name, key->name,
+        std::printf("Logitech %s %s key %s (0x%02x) -> %u,%u,%u\n",
+                    keyboardName, geometry->name, key->name,
                     static_cast<unsigned>(key->keyId),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
@@ -916,11 +940,8 @@ int runLogitech(const std::vector<std::string>& a) {
             return 2;
         }
 
-        const auto* geometry = logitech::g810::findGeometry(a[2]);
+        const auto* geometry = findDeviceGeometry(a[2]);
         if(!geometry) {
-            std::fprintf(stderr,
-                         "error: unknown G810 geometry '%s'; use 'logitech layouts'\n",
-                         a[2].c_str());
             return 2;
         }
 
@@ -950,7 +971,7 @@ int runLogitech(const std::vector<std::string>& a) {
         for(std::size_t i = 0; i < geometry->keyCount; ++i) {
             keyboardColors.push_back({geometry->keyIds[i], r, g, b});
         }
-        if(!dev.setPerKey8080Colors(logitech::g810::kKeyboardKeyType,
+        if(!dev.setPerKey8080Colors(logitech::g610_g810::kKeyboardKeyType,
                                     keyboardColors, &err)) {
             std::fprintf(stderr, "error: %s\n", err.c_str());
             return 1;
@@ -965,16 +986,16 @@ int runLogitech(const std::vector<std::string>& a) {
             return dev.setPerKey8080Colors(type, colors, &err);
         };
 
-        if(!setGroup(logitech::g810::kMediaKeyType, logitech::g810::kMedia) ||
-           !setGroup(logitech::g810::kIndicatorKeyType, logitech::g810::kIndicators) ||
-           !setGroup(logitech::g810::kLogoKeyType, logitech::g810::kLogo)) {
+        if(!setGroup(logitech::g610_g810::kMediaKeyType, logitech::g610_g810::kMedia) ||
+           !setGroup(logitech::g610_g810::kIndicatorKeyType, logitech::g610_g810::kIndicators) ||
+           !setGroup(logitech::g610_g810::kLogoKeyType, logitech::g610_g810::kLogo)) {
             std::fprintf(stderr, "error: %s\n", err.c_str());
             return 1;
         }
 
-        std::printf("Logitech G810 %s physical lighting (%zu items) -> %u,%u,%u\n",
-                    geometry->name,
-                    logitech::g810::physicalLightingCount(*geometry),
+        std::printf("Logitech %s %s physical lighting (%zu items) -> %u,%u,%u\n",
+                    keyboardName, geometry->name,
+                    logitech::g610_g810::physicalLightingCount(*geometry),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
@@ -1029,8 +1050,8 @@ int runLogitech(const std::vector<std::string>& a) {
             return 1;
         }
 
-        std::printf("Logitech G810 indicator %s -> %u,%u,%u\n",
-                    a[2].c_str(),
+        std::printf("Logitech %s indicator %s -> %u,%u,%u\n",
+                    keyboardName, a[2].c_str(),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
@@ -1068,7 +1089,8 @@ int runLogitech(const std::vector<std::string>& a) {
             return 1;
         }
 
-        std::printf("Logitech G810 solid -> %u,%u,%u\n",
+        std::printf("Logitech %s solid -> %u,%u,%u\n",
+                    keyboardName,
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
