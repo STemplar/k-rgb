@@ -226,10 +226,18 @@ bool LogitechHIDPP20Device::probeKeyboard(std::string* err) {
         }
     }
 
-    // 0x8040/0x8070/0x8071/0x8081 are valid HID++ lighting capabilities too.
-    // They are accepted here so zoned/native/newer Logitech keyboards can be
-    // detected even before a model-specific write path is implemented.
-    return true;
+    // For feature families that do not currently expose a parsed keyboard
+    // topology, only accept USB identities already known to be keyboards.
+    // This prevents a Logitech mouse/headset with e.g. 0x8070 from being
+    // misclassified while keeping protocol selection capability-driven.
+    if(logitechKnownDeviceForProductId(usbIdentity_.productId) != nullptr) {
+        return true;
+    }
+
+    if(err) {
+        *err = "lighting features found, but endpoint is not proven to be a keyboard";
+    }
+    return false;
 }
 
 bool LogitechHIDPP20Device::openKeyboard(std::string* err) {
