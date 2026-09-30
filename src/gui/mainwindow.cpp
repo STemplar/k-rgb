@@ -966,8 +966,12 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         refreshKeyboardZoneEditor();
 
         if(!controller_->supportsAdvancedModes()) {
+            const LightingSettings saved = LightingSettings::load(Profiles::current());
+            const bool preferZones =
+                controller_->supportsZoneColors() && saved.kind == LightingSettings::Zones;
             for(int i = 0; i < modes_.size(); ++i) {
-                if(modes_.at(i).solid) {
+                if((preferZones && modes_.at(i).zones) ||
+                   (!preferZones && modes_.at(i).solid)) {
                     modeCombo_->setCurrentIndex(i);
                     break;
                 }
