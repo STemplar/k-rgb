@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 namespace krgb {
@@ -11,12 +12,14 @@ enum class KeyboardModelId : std::uint8_t {
     AlienwareAW410K,
     AlienwareAW510K,
     BeQuietLightMount,
+    LogitechG810OrionSpectrum,
 };
 
 enum class KeyboardBackendId : std::uint8_t {
     Unknown = 0,
     AlienwareAWx10KFamily,
     BeQuietMountFamily,
+    LogitechHIDPP20Family,
 };
 
 struct KeyboardIdentity {
@@ -67,13 +70,44 @@ inline constexpr KeyboardIdentity kBeQuietLightMountIdentity{
     3,
 };
 
+// The G810 was shipped with two USB product IDs. They are the same logical
+// keyboard model and share the HID++ 2.0 lighting backend.
+inline constexpr KeyboardIdentity kLogitechG810C331Identity{
+    KeyboardModelId::LogitechG810OrionSpectrum,
+    KeyboardBackendId::LogitechHIDPP20Family,
+    "Logitech",
+    "G810 Orion Spectrum",
+    "Logitech G810 Orion Spectrum",
+    0x046d,
+    0xc331,
+    1,
+    -1,
+};
+
+inline constexpr KeyboardIdentity kLogitechG810C337Identity{
+    KeyboardModelId::LogitechG810OrionSpectrum,
+    KeyboardBackendId::LogitechHIDPP20Family,
+    "Logitech",
+    "G810 Orion Spectrum",
+    "Logitech G810 Orion Spectrum",
+    0x046d,
+    0xc337,
+    1,
+    -1,
+};
+
+inline constexpr std::array<const KeyboardIdentity*, 5> kKeyboardIdentities{{
+    &kAlienwareAW410KIdentity,
+    &kAlienwareAW510KIdentity,
+    &kBeQuietLightMountIdentity,
+    &kLogitechG810C331Identity,
+    &kLogitechG810C337Identity,
+}};
+
 inline constexpr const KeyboardIdentity* keyboardIdentityForUsb(
     std::uint16_t vendorId, std::uint16_t productId) {
 
-    for(const KeyboardIdentity* identity : {
-            &kAlienwareAW410KIdentity,
-            &kAlienwareAW510KIdentity,
-            &kBeQuietLightMountIdentity}) {
+    for(const KeyboardIdentity* identity : kKeyboardIdentities) {
         if(identity->vendorId == vendorId && identity->productId == productId) {
             return identity;
         }
