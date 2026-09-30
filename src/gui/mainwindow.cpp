@@ -670,14 +670,25 @@ void MainWindow::onModeChanged() {
         return;
     }
     const ModeEntry& m = modes_.at(idx);
-    colorButton_->setEnabled(m.usesColor);
-    speedCombo_->setEnabled(m.usesSpeed);
-    directionCombo_->setEnabled(m.usesDirection);
+    const bool advanced = controller_->supportsAdvancedModes();
+    const bool supported = advanced || m.solid;
 
-    perKeyPanel_->setVisible(m.perkey);
-    if(m.perkey) {
+    colorButton_->setEnabled(supported && m.usesColor);
+    speedCombo_->setEnabled(supported && m.usesSpeed);
+    directionCombo_->setEnabled(supported && m.usesDirection);
+    applyButton_->setEnabled(controller_->isConnected() && supported);
+
+    perKeyPanel_->setVisible(advanced && m.perkey);
+    if(advanced && m.perkey) {
         // Grow (never shrink) so the keyboard has room.
         resize(qMax(width(), 780), qMax(height(), 560));
+    }
+
+    if(controller_->isConnected() && !supported) {
+        applyButton_->setToolTip(
+            i18n("This mode is not exposed for the connected Logitech keyboard yet."));
+    } else {
+        applyButton_->setToolTip(QString());
     }
 }
 
@@ -863,12 +874,21 @@ QString MainWindow::trayAutostartFilePath() const {
 void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     if(connected) {
         const QString model = controller_->modelName().isEmpty()
-                                  ? i18n("Alienware keyboard")
+                                  ? i18n("Keyboard")
                                   : controller_->modelName();
         statusLabel_->setText(i18n("<span style='color:#27ae60'>●</span> %1", model));
         statusLabel_->setToolTip(i18n("Connected to %1 (%2)", model,
                                       path.isEmpty() ? i18n("unknown") : path));
         keyboardWidget_->setModelBit(controller_->modelBit());
+
+        if(!controller_->supportsAdvancedModes()) {
+            for(int i = 0; i < modes_.size(); ++i) {
+                if(modes_.at(i).solid) {
+                    modeCombo_->setCurrentIndex(i);
+                    break;
+                }
+            }
+        }
     } else {
         statusLabel_->setText(i18n("<span style='color:#c0392b'>●</span> Not found"));
         statusLabel_->setToolTip(
