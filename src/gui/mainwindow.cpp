@@ -91,7 +91,7 @@ QHash<QString, QColor> makeUsaFlag() {
 
 MainWindow::MainWindow(KeyboardController* controller, CaseController* caseController, QWidget* parent)
     : KMainWindow(parent), controller_(controller), caseController_(caseController) {
-    setWindowTitle(i18n("k-rgb — Alienware lighting"));
+    setWindowTitle(i18n("k-rgb — RGB lighting"));
     populateModes();
     buildUi();
     setupTray();
@@ -872,7 +872,7 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     } else {
         statusLabel_->setText(i18n("<span style='color:#c0392b'>●</span> Not found"));
         statusLabel_->setToolTip(
-            i18n("No supported Alienware keyboard found — check it's plugged in "
+            i18n("No supported keyboard found — check it's plugged in "
                  "and the udev rule is installed."));
     }
 
