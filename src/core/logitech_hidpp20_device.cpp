@@ -646,108 +646,124 @@ bool LogitechHIDPP20Device::setSolid(
 
     normalizeLightingColor(r, g, b);
 
-    LogitechHIDPP20FeatureInfo fx;
-    if(!getFeature(kFeatureColorLedEffects, fx, err)) {
-        return false;
-    }
-    if(fx.index == 0) {
-        if(err) {
-            *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
-        }
+    LogitechHIDPP20LightingFeatures features;
+    if(!getLightingFeatures(features, err)) {
         return false;
     }
 
-    // 0x8070 function 0: GetInfo. On this feature generation byte 0 is the
-    // number of firmware lighting zones.
-    LongReport infoResponse{};
-    if(!requestLong(fx.index, 0x00, nullptr, 0, infoResponse, err)) {
-        return false;
-    }
-    const std::uint8_t zoneCount = infoResponse[4];
-    if(zoneCount == 0) {
-        if(err) {
-            *err = "HID++ 0x8070 reported zero lighting zones";
-        }
-        return false;
-    }
+    bool wroteLighting = false;
 
-    // Find a static-color effect in every zone. 0x8070 function 1 returns
-    // zone metadata; function 2 returns effect metadata. Effect type 0x0001
-    // is the static-color effect.
-    std::vector<std::uint8_t> staticEffectIndex(zoneCount, 0xff);
-    for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
-        const std::uint8_t zoneQuery[2] = {zone, 0x00};
-        LongReport zoneResponse{};
-        if(!requestLong(fx.index, 0x01, zoneQuery, sizeof(zoneQuery),
-                        zoneResponse, err)) {
+    if(features.colorLedEffects8070.index != 0) {
+        const auto& fx = features.colorLedEffects8070;
+
+        // 0x8070 function 0: GetInfo. On this feature generation byte 0 is the
+        // number of firmware lighting zones.
+        LongReport infoResponse{};
+        if(!requestLong(fx.index, 0x00, nullptr, 0, infoResponse, err)) {
+            return false;
+        }
+        const std::uint8_t zoneCount = infoResponse[4];
+        if(zoneCount == 0) {
+            if(err) {
+                *err = "HID++ 0x8070 reported zero lighting zones";
+            }
             return false;
         }
 
-        const std::uint8_t effectCount = zoneResponse[7];
-        for(std::uint8_t effect = 0; effect < effectCount; ++effect) {
-            const std::uint8_t effectQuery[4] = {zone, effect, 0x00, 0x00};
-            LongReport effectResponse{};
-            if(!requestLong(fx.index, 0x02, effectQuery, sizeof(effectQuery),
-                            effectResponse, err)) {
+        // Discover a static-color effect for every reported zone.
+        std::vector<std::uint8_t> staticEffectIndex(zoneCount, 0xff);
+        for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
+            const std::uint8_t zoneQuery[2] = {zone, 0x00};
+            LongReport zoneResponse{};
+            if(!requestLong(fx.index, 0x01, zoneQuery, sizeof(zoneQuery),
+                            zoneResponse, err)) {
                 return false;
             }
 
-            const std::uint16_t effectType =
-                (static_cast<std::uint16_t>(effectResponse[6]) << 8) |
-                 static_cast<std::uint16_t>(effectResponse[7]);
-            if(effectType == 0x0001) {
-                staticEffectIndex[zone] = effect;
-                break;
+            const std::uint8_t effectCount = zoneResponse[7];
+            for(std::uint8_t effect = 0; effect < effectCount; ++effect) {
+                const std::uint8_t effectQuery[4] = {zone, effect, 0x00, 0x00};
+                LongReport effectResponse{};
+                if(!requestLong(fx.index, 0x02, effectQuery, sizeof(effectQuery),
+                                effectResponse, err)) {
+                    return false;
+                }
+
+                const std::uint16_t effectType =
+                    (static_cast<std::uint16_t>(effectResponse[6]) << 8) |
+                     static_cast<std::uint16_t>(effectResponse[7]);
+                if(effectType == 0x0001) {
+                    staticEffectIndex[zone] = effect;
+                    break;
+                }
+            }
+
+            if(staticEffectIndex[zone] == 0xff) {
+                if(err) {
+                    *err = "HID++ 0x8070 zone " + std::to_string(zone) +
+                           " has no static-color effect";
+                }
+                return false;
             }
         }
 
-        if(staticEffectIndex[zone] == 0xff) {
-            if(err) {
-                *err = "HID++ 0x8070 zone " + std::to_string(zone) +
-                       " has no static-color effect";
+        // 0x8070 function 8: SetSWControl(enabled, persist).
+        const std::uint8_t claim[2] = {0x01, 0x01};
+        LongReport claimResponse{};
+        if(!requestLong(fx.index, 0x08, claim, sizeof(claim),
+                        claimResponse, err)) {
+            return false;
+        }
+
+        // 0x8070 function 3: SetEffectByIndex.
+        for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
+            std::uint8_t params[16]{};
+            params[0] = zone;
+            params[1] = staticEffectIndex[zone];
+            params[2] = r;
+            params[3] = g;
+            params[4] = b;
+            params[5] = (r || g || b) ? 0x02 : 0x00;
+            params[12] = 0x00;
+
+            LongReport response{};
+            if(!requestLong(fx.index, 0x03, params, sizeof(params),
+                            response, err)) {
+                return false;
             }
+        }
+        wroteLighting = true;
+    }
+
+    if(features.perKey8080.index != 0) {
+        LogitechHIDPP20PerKeyInfo topology;
+        if(!getPerKey8080Info(topology, err)) {
             return false;
+        }
+
+        // Program exactly the address groups and IDs reported by the device.
+        // Do not assume media/G-key/logo/indicator counts from a model table.
+        for(const auto& type : topology.types) {
+            if(type.colors.empty()) {
+                continue;
+            }
+            std::vector<LogitechHIDPP20KeyColor> colors;
+            colors.reserve(type.colors.size());
+            for(const auto& item : type.colors) {
+                colors.push_back({item.keyId, r, g, b});
+            }
+            if(!setPerKey8080Colors(type.keyType, colors, err)) {
+                return false;
+            }
+            wroteLighting = true;
         }
     }
 
-    // 0x8070 function 8: SetSWControl(enabled, persist). Claim live software
-    // control before changing zone effects.
-    const std::uint8_t claim[2] = {0x01, 0x01};
-    LongReport claimResponse{};
-    if(!requestLong(fx.index, 0x08, claim, sizeof(claim), claimResponse, err)) {
-        return false;
-    }
-
-    // 0x8070 function 3: SetEffectByIndex.
-    // Payload: zone, effect index, 10-byte parameter block, persistence/power.
-    // Static effect parameters are RGB followed by marker 0x02.
-    for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
-        std::uint8_t params[16]{};
-        params[0] = zone;
-        params[1] = staticEffectIndex[zone];
-        params[2] = r;
-        params[3] = g;
-        params[4] = b;
-        params[5] = (r || g || b) ? 0x02 : 0x00;
-        params[12] = 0x00; // live/volatile, do not persist to onboard storage
-
-        LongReport response{};
-        if(!requestLong(fx.index, 0x03, params, sizeof(params), response, err)) {
-            return false;
+    if(!wroteLighting) {
+        if(err) {
+            *err = "No implemented solid-color path for this device's "
+                   "discovered HID++ lighting features";
         }
-    }
-
-    // G610/G810 keep the five status/backlight indicators in 0x8080 keyType
-    // 0x0040. Program the complete group to the same RGB value so inactive
-    // indicators retain their colour for the next time their status turns on.
-    const std::vector<LogitechHIDPP20KeyColor> indicators = {
-        {0x01, r, g, b}, // backlight
-        {0x02, r, g, b}, // game mode
-        {0x03, r, g, b}, // Caps Lock
-        {0x04, r, g, b}, // Scroll Lock
-        {0x05, r, g, b}, // Num Lock
-    };
-    if(!setPerKey8080Colors(0x0040, indicators, err)) {
         return false;
     }
 
