@@ -341,7 +341,7 @@ void usageLogitech() {
         "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
         "  krgb-cli logitech verify-keys interactively verify keyboard IDs against HID names\n"
-        "  krgb-cli logitech verify-controls verify 5 media + lighting/game controls\n"
+        "  krgb-cli logitech verify-controls verify media, controls, status LEDs and logo\n"
         "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
         "  krgb-cli logitech indicator NAME R G B\n"
         "    NAME: backlight|game|caps|scroll|num\n");
@@ -675,11 +675,14 @@ int runLogitech(const std::vector<std::string>& a) {
 
         const LogitechHIDPP20PerKeyTypeInfo* media = nullptr;
         const LogitechHIDPP20PerKeyTypeInfo* indicators = nullptr;
+        const LogitechHIDPP20PerKeyTypeInfo* logo = nullptr;
         for(const auto& type : info.types) {
             if(type.keyType == 0x0002) {
                 media = &type;
             } else if(type.keyType == 0x0040) {
                 indicators = &type;
+            } else if(type.keyType == 0x0010) {
+                logo = &type;
             }
         }
 
@@ -691,16 +694,22 @@ int runLogitech(const std::vector<std::string>& a) {
             std::fprintf(stderr, "error: G810 reported no indicator IDs\n");
             return 1;
         }
+        if(!logo || logo->colors.empty()) {
+            std::fprintf(stderr, "error: G810 reported no logo IDs\n");
+            return 1;
+        }
 
         std::printf(
             "G810 control verifier\n"
             "  media/control keyType 0x0002: %zu discovered (reported %u)\n"
             "  indicator keyType     0x0040: %zu discovered (reported %u)\n"
-            "Tests the 5 media buttons plus lighting and game-mode controls.\n"
-            "All tested controls are cleared first; exactly one is then lit RED.\n"
+            "  logo keyType          0x0010: %zu discovered (reported %u)\n"
+            "Tests media, lighting/game controls, lock-status LEDs and logo.\n"
+            "All tested groups are cleared first; exactly one item is then lit RED.\n"
             "Enter=next, r=repeat, q=quit.\n\n",
             media->colors.size(), static_cast<unsigned>(media->keyCount),
-            indicators->colors.size(), static_cast<unsigned>(indicators->keyCount));
+            indicators->colors.size(), static_cast<unsigned>(indicators->keyCount),
+            logo->colors.size(), static_cast<unsigned>(logo->keyCount));
 
         std::string input;
 
@@ -725,6 +734,17 @@ int runLogitech(const std::vector<std::string>& a) {
         }
         if(!dev.setPerKey8080Colors(0x0040, indicatorsOff, &err)) {
             std::fprintf(stderr, "error: cannot clear indicator controls: %s\n",
+                         err.c_str());
+            return 1;
+        }
+
+        std::vector<LogitechHIDPP20KeyColor> logoOff;
+        logoOff.reserve(logo->colors.size());
+        for(const auto& color : logo->colors) {
+            logoOff.push_back({color.keyId, 0, 0, 0});
+        }
+        if(!dev.setPerKey8080Colors(0x0010, logoOff, &err)) {
+            std::fprintf(stderr, "error: cannot clear logo: %s\n",
                          err.c_str());
             return 1;
         }
@@ -762,6 +782,7 @@ int runLogitech(const std::vector<std::string>& a) {
                 if(input == "q" || input == "Q") {
                     dev.setPerKey8080Colors(0x0002, mediaOff, nullptr);
                     dev.setPerKey8080Colors(0x0040, indicatorsOff, nullptr);
+                    dev.setPerKey8080Colors(0x0010, logoOff, nullptr);
                     return 0;
                 }
                 if(input == "r" || input == "R") {
@@ -782,23 +803,10 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
-        // IDs 1 and 2 of keyType 0x0040 are the physical lighting and
-        // game-mode controls. IDs 3..5 are Caps/Scroll/Num status indicators.
-        const std::uint8_t controlIndicatorIds[] = {0x01, 0x02};
-        for(std::size_t i = 0; i < 2; ++i) {
-            const std::uint8_t keyId = controlIndicatorIds[i];
-            bool present = false;
-            for(const auto& color : indicators->colors) {
-                if(color.keyId == keyId) {
-                    present = true;
-                    break;
-                }
-            }
-            if(!present) {
-                std::printf("[control %zu/2] id 0x%02x -> not reported by device\n",
-                            i + 1, static_cast<unsigned>(keyId));
-                continue;
-            }
+        // Verify every 0x0040 item. Logitech's G810 resources define:
+        // 0x01 Lighting, 0x02 Game, 0x03 Caps, 0x04 Scroll, 0x05 Num.
+        for(std::size_t i = 0; i < indicators->colors.size(); ++i) {
+            const std::uint8_t keyId = indicators->colors[i].keyId;
 
             std::vector<LogitechHIDPP20KeyColor> frame;
             frame.reserve(indicators->colors.size());
@@ -815,8 +823,9 @@ int runLogitech(const std::vector<std::string>& a) {
 
             for(;;) {
                 const std::string name = logitechG810IndicatorName(keyId);
-                std::printf("[control %zu/2] id 0x%02x -> %-28s > ",
-                            i + 1, static_cast<unsigned>(keyId), name.c_str());
+                std::printf("[indicator %zu/%zu] id 0x%02x -> %-28s > ",
+                            i + 1, indicators->colors.size(),
+                            static_cast<unsigned>(keyId), name.c_str());
                 std::fflush(stdout);
                 if(!std::getline(std::cin, input)) {
                     input = "q";
@@ -825,6 +834,9 @@ int runLogitech(const std::vector<std::string>& a) {
                     break;
                 }
                 if(input == "q" || input == "Q") {
+                    dev.setPerKey8080Colors(0x0002, mediaOff, nullptr);
+                    dev.setPerKey8080Colors(0x0040, indicatorsOff, nullptr);
+                    dev.setPerKey8080Colors(0x0010, logoOff, nullptr);
                     return 0;
                 }
                 if(input == "r" || input == "R") {
@@ -837,10 +849,66 @@ int runLogitech(const std::vector<std::string>& a) {
                 }
                 std::printf("Use Enter, r, or q.\n");
             }
+
+            if(!dev.setPerKey8080Colors(0x0040, indicatorsOff, &err)) {
+                std::fprintf(stderr, "error: cannot clear indicator controls: %s\n",
+                             err.c_str());
+                return 1;
+            }
+        }
+
+        // Verify every logo item; the G810 has a single logo at id 0x01.
+        for(std::size_t i = 0; i < logo->colors.size(); ++i) {
+            const std::uint8_t keyId = logo->colors[i].keyId;
+
+            std::vector<LogitechHIDPP20KeyColor> frame;
+            frame.reserve(logo->colors.size());
+            for(const auto& color : logo->colors) {
+                frame.push_back({color.keyId,
+                                 static_cast<std::uint8_t>(color.keyId == keyId ? 255 : 0),
+                                 0, 0});
+            }
+            if(!dev.setPerKey8080Colors(0x0010, frame, &err)) {
+                std::fprintf(stderr, "error: cannot set logo id 0x%02x: %s\n",
+                             static_cast<unsigned>(keyId), err.c_str());
+                return 1;
+            }
+
+            for(;;) {
+                std::printf("[logo %zu/%zu] id 0x%02x -> Logo                         > ",
+                            i + 1, logo->colors.size(),
+                            static_cast<unsigned>(keyId));
+                std::fflush(stdout);
+                if(!std::getline(std::cin, input)) {
+                    input = "q";
+                }
+                if(input.empty()) {
+                    break;
+                }
+                if(input == "q" || input == "Q") {
+                    dev.setPerKey8080Colors(0x0002, mediaOff, nullptr);
+                    dev.setPerKey8080Colors(0x0040, indicatorsOff, nullptr);
+                    dev.setPerKey8080Colors(0x0010, logoOff, nullptr);
+                    return 0;
+                }
+                if(input == "r" || input == "R") {
+                    if(!dev.setPerKey8080Colors(0x0010, frame, &err)) {
+                        std::fprintf(stderr, "error: cannot reset logo id 0x%02x: %s\n",
+                                     static_cast<unsigned>(keyId), err.c_str());
+                        return 1;
+                    }
+                    continue;
+                }
+                std::printf("Use Enter, r, or q.\n");
+            }
         }
 
         if(!dev.setPerKey8080Colors(0x0040, indicatorsOff, &err)) {
             std::fprintf(stderr, "warning: cannot clear indicator controls: %s\n",
+                         err.c_str());
+        }
+        if(!dev.setPerKey8080Colors(0x0010, logoOff, &err)) {
+            std::fprintf(stderr, "warning: cannot clear logo: %s\n",
                          err.c_str());
         }
         std::printf("Control verification sequence complete.\n");
