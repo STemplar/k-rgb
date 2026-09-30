@@ -218,10 +218,11 @@ void usageLogitech() {
         "Logitech HID++ 2.0:\n"
         "  krgb-cli logitech info        probe G810 HID++ and lighting features\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
-        "  krgb-cli logitech verify-keys interactively verify keyboard IDs against HID names\n"
+        "  krgb-cli logitech layouts     list Logitech G810 resource layouts\n"
+        "  krgb-cli logitech verify-keys [LAYOUT] verify physical layout IDs\n"
         "  krgb-cli logitech verify-controls verify media, controls, status LEDs and logo\n"
-        "  krgb-cli logitech key LABEL R G B set one C331 INTL keyboard LED\n"
-        "  krgb-cli logitech perkey-solid R G B set all 116 physical lighting items\n"
+        "  krgb-cli logitech key [LAYOUT] LABEL R G B set one physical keyboard LED\n"
+        "  krgb-cli logitech perkey-solid [LAYOUT] R G B set all physical lighting items\n"
         "  krgb-cli logitech solid R G B set all firmware lighting zones\n"
         "  krgb-cli logitech indicator NAME R G B\n"
         "    NAME: backlight|game|caps|scroll|num\n");
@@ -349,7 +350,7 @@ int runCase(const std::vector<std::string>& a) {
 
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
-    if(sub != "info" && sub != "perkey-info" &&
+    if(sub != "info" && sub != "perkey-info" && sub != "layouts" &&
        sub != "verify-keys" && sub != "verify-controls" &&
        sub != "key" && sub != "perkey-solid" &&
        sub != "solid" && sub != "indicator") {
@@ -362,6 +363,24 @@ int runLogitech(const std::vector<std::string>& a) {
     if(!dev.openG810(&err)) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
+    }
+
+    if(sub == "layouts") {
+        if(a.size() != 2) {
+            usageLogitech();
+            return 2;
+        }
+        std::printf("Logitech G810 layouts from LGS resources:\n");
+        for(const auto& layout : logitech::g810::kLayouts) {
+            std::printf("  %-14s %3zu keys  %s",
+                        layout.name, layout.keyCount, layout.resource);
+            if(layout.preferredProductId) {
+                std::printf("  PID %04x",
+                            static_cast<unsigned>(layout.preferredProductId));
+            }
+            std::printf("\n");
+        }
+        return 0;
     }
 
     if(sub == "perkey-info") {
@@ -410,8 +429,28 @@ int runLogitech(const std::vector<std::string>& a) {
     }
 
     if(sub == "verify-keys") {
-        if(a.size() != 2) {
+        if(a.size() != 2 && a.size() != 3) {
             usageLogitech();
+            return 2;
+        }
+
+        const logitech::g810::KeyboardLayout* selectedLayout =
+            a.size() == 3
+                ? logitech::g810::findLayout(a[2])
+                : logitech::g810::defaultLayoutForProduct(dev.productId());
+        if(!selectedLayout) {
+            std::fprintf(stderr,
+                         "error: no default G810 layout for PID %04x; specify a layout\n",
+                         static_cast<unsigned>(dev.productId()));
+            return 2;
+        }
+        if(a.size() == 3 && selectedLayout->preferredProductId != 0 &&
+           selectedLayout->preferredProductId != dev.productId()) {
+            std::fprintf(stderr,
+                         "error: layout %s is for PID %04x, device is PID %04x\n",
+                         selectedLayout->name,
+                         static_cast<unsigned>(selectedLayout->preferredProductId),
+                         static_cast<unsigned>(dev.productId()));
             return 2;
         }
 
@@ -452,38 +491,39 @@ int runLogitech(const std::vector<std::string>& a) {
             }
         }
 
-        if(dev.productId() != LogitechHIDPP20Device::kG810ProductId1) {
-            std::fprintf(stderr,
-                         "error: verified key map currently covers G810 PID C331 INTL only\n");
-            return 1;
-        }
-
         std::vector<std::uint8_t> verifyIds;
-        verifyIds.reserve(logitech::g810::kC331IntlKeyboard.size());
-        for(const auto& key : logitech::g810::kC331IntlKeyboard) {
+        verifyIds.reserve(selectedLayout->keyCount);
+        for(std::size_t i = 0; i < selectedLayout->keyCount; ++i) {
+            const std::uint8_t expectedId = selectedLayout->keyIds[i];
             bool reported = false;
             for(const auto& color : keyboard->colors) {
-                if(color.keyId == key.keyId) {
+                if(color.keyId == expectedId) {
                     reported = true;
                     break;
                 }
             }
             if(!reported) {
+                const auto* mapped =
+                    logitech::g810::keyboardDefinitionById(expectedId);
                 std::fprintf(stderr,
-                             "error: C331 INTL key 0x%02x (%s) not reported by device\n",
-                             static_cast<unsigned>(key.keyId), key.label);
+                             "error: layout %s key 0x%02x (%s) not reported by device\n",
+                             selectedLayout->name,
+                             static_cast<unsigned>(expectedId),
+                             mapped ? mapped->label : "unknown");
                 return 1;
             }
-            verifyIds.push_back(key.keyId);
+            verifyIds.push_back(expectedId);
         }
 
         std::printf(
-            "G810 C331 INTL key verifier: %zu firmware addresses, %zu physical keys "
+            "G810 %s key verifier: %zu firmware addresses, %zu physical keys "
             "(device reports %u).\n"
-            "Physical key list comes from the verified Logitech C331 INTL layout map.\n"
+            "Physical key list comes from Logitech LGS resource %s.\n"
             "Each key is lit RED. Enter=next, r=repeat, q=quit.\n\n",
+            selectedLayout->name,
             keyboard->colors.size(), verifyIds.size(),
-            static_cast<unsigned>(keyboard->keyCount));
+            static_cast<unsigned>(keyboard->keyCount),
+            selectedLayout->resource);
 
         std::uint8_t activeId = 0;
         bool haveActive = false;
@@ -511,7 +551,8 @@ int runLogitech(const std::vector<std::string>& a) {
             haveActive = true;
 
             for(;;) {
-                const auto* mapped = logitech::g810::findKeyboardById(keyId);
+                const auto* mapped =
+                    logitech::g810::findKeyboardById(*selectedLayout, keyId);
                 const char* name = mapped ? mapped->label : "UNKNOWN";
                 std::printf("[%3zu/%3zu] id 0x%02x -> %-30s  > ",
                             i + 1, verifyIds.size(),
@@ -828,20 +869,38 @@ int runLogitech(const std::vector<std::string>& a) {
     }
 
     if(sub == "key") {
-        if(a.size() != 6) {
+        if(a.size() != 6 && a.size() != 7) {
             usageLogitech();
             return 2;
         }
-        if(dev.productId() != LogitechHIDPP20Device::kG810ProductId1) {
+
+        const bool explicitLayout = a.size() == 7;
+        const auto* layout = explicitLayout
+            ? logitech::g810::findLayout(a[2])
+            : logitech::g810::defaultLayoutForProduct(dev.productId());
+        if(!layout) {
             std::fprintf(stderr,
-                         "error: named key control currently covers G810 PID C331 INTL only\n");
-            return 1;
+                         "error: unknown/no default G810 layout; use 'logitech layouts'\n");
+            return 2;
+        }
+        if(explicitLayout && layout->preferredProductId != 0 &&
+           layout->preferredProductId != dev.productId()) {
+            std::fprintf(stderr,
+                         "error: layout %s is for PID %04x, device is PID %04x\n",
+                         layout->name,
+                         static_cast<unsigned>(layout->preferredProductId),
+                         static_cast<unsigned>(dev.productId()));
+            return 2;
         }
 
-        const auto* key = logitech::g810::findKeyboardByName(a[2]);
+        const std::size_t labelArg = explicitLayout ? 3 : 2;
+        const std::size_t rgbArg = labelArg + 1;
+        const auto* key =
+            logitech::g810::findKeyboardByName(*layout, a[labelArg]);
         if(!key) {
-            std::fprintf(stderr, "error: unknown G810 C331 INTL key label: %s\n",
-                         a[2].c_str());
+            std::fprintf(stderr,
+                         "error: key %s is not present in G810 layout %s\n",
+                         a[labelArg].c_str(), layout->name);
             return 2;
         }
 
@@ -858,9 +917,9 @@ int runLogitech(const std::vector<std::string>& a) {
         };
 
         std::uint8_t r = 0, g = 0, b = 0;
-        if(!parseChannel(a[3], r) ||
-           !parseChannel(a[4], g) ||
-           !parseChannel(a[5], b)) {
+        if(!parseChannel(a[rgbArg], r) ||
+           !parseChannel(a[rgbArg + 1], g) ||
+           !parseChannel(a[rgbArg + 2], b)) {
             std::fprintf(stderr, "error: RGB values must be within 0..255\n");
             return 2;
         }
@@ -870,8 +929,9 @@ int runLogitech(const std::vector<std::string>& a) {
             return 1;
         }
 
-        std::printf("Logitech G810 key %s (0x%02x) -> %u,%u,%u\n",
-                    key->name, static_cast<unsigned>(key->keyId),
+        std::printf("Logitech G810 %s key %s (0x%02x) -> %u,%u,%u\n",
+                    layout->name, key->name,
+                    static_cast<unsigned>(key->keyId),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
@@ -879,16 +939,31 @@ int runLogitech(const std::vector<std::string>& a) {
     }
 
     if(sub == "perkey-solid") {
-        if(a.size() != 5) {
+        if(a.size() != 5 && a.size() != 6) {
             usageLogitech();
             return 2;
         }
-        if(dev.productId() != LogitechHIDPP20Device::kG810ProductId1) {
+
+        const bool explicitLayout = a.size() == 6;
+        const auto* layout = explicitLayout
+            ? logitech::g810::findLayout(a[2])
+            : logitech::g810::defaultLayoutForProduct(dev.productId());
+        if(!layout) {
             std::fprintf(stderr,
-                         "error: physical per-key map currently covers G810 PID C331 INTL only\n");
-            return 1;
+                         "error: unknown/no default G810 layout; use 'logitech layouts'\n");
+            return 2;
+        }
+        if(explicitLayout && layout->preferredProductId != 0 &&
+           layout->preferredProductId != dev.productId()) {
+            std::fprintf(stderr,
+                         "error: layout %s is for PID %04x, device is PID %04x\n",
+                         layout->name,
+                         static_cast<unsigned>(layout->preferredProductId),
+                         static_cast<unsigned>(dev.productId()));
+            return 2;
         }
 
+        const std::size_t rgbArg = explicitLayout ? 3 : 2;
         auto parseChannel = [](const std::string& value, std::uint8_t& out) {
             char* end = nullptr;
             errno = 0;
@@ -902,11 +977,22 @@ int runLogitech(const std::vector<std::string>& a) {
         };
 
         std::uint8_t r = 0, g = 0, b = 0;
-        if(!parseChannel(a[2], r) ||
-           !parseChannel(a[3], g) ||
-           !parseChannel(a[4], b)) {
+        if(!parseChannel(a[rgbArg], r) ||
+           !parseChannel(a[rgbArg + 1], g) ||
+           !parseChannel(a[rgbArg + 2], b)) {
             std::fprintf(stderr, "error: RGB values must be within 0..255\n");
             return 2;
+        }
+
+        std::vector<LogitechHIDPP20KeyColor> keyboardColors;
+        keyboardColors.reserve(layout->keyCount);
+        for(std::size_t i = 0; i < layout->keyCount; ++i) {
+            keyboardColors.push_back({layout->keyIds[i], r, g, b});
+        }
+        if(!dev.setPerKey8080Colors(logitech::g810::kKeyboardKeyType,
+                                    keyboardColors, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
         }
 
         auto setGroup = [&](std::uint16_t type, const auto& elements) {
@@ -918,20 +1004,16 @@ int runLogitech(const std::vector<std::string>& a) {
             return dev.setPerKey8080Colors(type, colors, &err);
         };
 
-        if(!setGroup(logitech::g810::kKeyboardKeyType,
-                     logitech::g810::kC331IntlKeyboard) ||
-           !setGroup(logitech::g810::kMediaKeyType,
-                     logitech::g810::kMedia) ||
-           !setGroup(logitech::g810::kIndicatorKeyType,
-                     logitech::g810::kIndicators) ||
-           !setGroup(logitech::g810::kLogoKeyType,
-                     logitech::g810::kLogo)) {
+        if(!setGroup(logitech::g810::kMediaKeyType, logitech::g810::kMedia) ||
+           !setGroup(logitech::g810::kIndicatorKeyType, logitech::g810::kIndicators) ||
+           !setGroup(logitech::g810::kLogoKeyType, logitech::g810::kLogo)) {
             std::fprintf(stderr, "error: %s\n", err.c_str());
             return 1;
         }
 
-        std::printf("Logitech G810 C331 INTL physical lighting (%zu items) -> %u,%u,%u\n",
-                    logitech::g810::kPhysicalLightingCount,
+        std::printf("Logitech G810 %s physical lighting (%zu items) -> %u,%u,%u\n",
+                    layout->name,
+                    logitech::g810::physicalLightingCount(*layout),
                     static_cast<unsigned>(r),
                     static_cast<unsigned>(g),
                     static_cast<unsigned>(b));
