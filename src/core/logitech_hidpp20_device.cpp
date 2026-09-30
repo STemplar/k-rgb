@@ -271,6 +271,103 @@ bool LogitechHIDPP20Device::getProtocolVersion(
     return true;
 }
 
+bool LogitechHIDPP20Device::setSolid(
+    std::uint8_t r, std::uint8_t g, std::uint8_t b, std::string* err) {
+
+    LogitechHIDPP20FeatureInfo fx;
+    if(!getFeature(kFeatureColorLedEffects, fx, err)) {
+        return false;
+    }
+    if(fx.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        }
+        return false;
+    }
+
+    // 0x8070 function 0: GetInfo. On this feature generation byte 0 is the
+    // number of firmware lighting zones.
+    LongReport infoResponse{};
+    if(!requestLong(fx.index, 0x00, nullptr, 0, infoResponse, err)) {
+        return false;
+    }
+    const std::uint8_t zoneCount = infoResponse[4];
+    if(zoneCount == 0) {
+        if(err) {
+            *err = "HID++ 0x8070 reported zero lighting zones";
+        }
+        return false;
+    }
+
+    // Find a static-color effect in every zone. 0x8070 function 1 returns
+    // zone metadata; function 2 returns effect metadata. Effect type 0x0001
+    // is the static-color effect.
+    std::vector<std::uint8_t> staticEffectIndex(zoneCount, 0xff);
+    for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
+        const std::uint8_t zoneQuery[2] = {zone, 0x00};
+        LongReport zoneResponse{};
+        if(!requestLong(fx.index, 0x01, zoneQuery, sizeof(zoneQuery),
+                        zoneResponse, err)) {
+            return false;
+        }
+
+        const std::uint8_t effectCount = zoneResponse[7];
+        for(std::uint8_t effect = 0; effect < effectCount; ++effect) {
+            const std::uint8_t effectQuery[4] = {zone, effect, 0x00, 0x00};
+            LongReport effectResponse{};
+            if(!requestLong(fx.index, 0x02, effectQuery, sizeof(effectQuery),
+                            effectResponse, err)) {
+                return false;
+            }
+
+            const std::uint16_t effectType =
+                (static_cast<std::uint16_t>(effectResponse[6]) << 8) |
+                 static_cast<std::uint16_t>(effectResponse[7]);
+            if(effectType == 0x0001) {
+                staticEffectIndex[zone] = effect;
+                break;
+            }
+        }
+
+        if(staticEffectIndex[zone] == 0xff) {
+            if(err) {
+                *err = "HID++ 0x8070 zone " + std::to_string(zone) +
+                       " has no static-color effect";
+            }
+            return false;
+        }
+    }
+
+    // 0x8070 function 8: SetSWControl(enabled, persist). Claim live software
+    // control before changing zone effects.
+    const std::uint8_t claim[2] = {0x01, 0x01};
+    LongReport claimResponse{};
+    if(!requestLong(fx.index, 0x08, claim, sizeof(claim), claimResponse, err)) {
+        return false;
+    }
+
+    // 0x8070 function 3: SetEffectByIndex.
+    // Payload: zone, effect index, 10-byte parameter block, persistence/power.
+    // Static effect parameters are RGB followed by marker 0x02.
+    for(std::uint8_t zone = 0; zone < zoneCount; ++zone) {
+        std::uint8_t params[16]{};
+        params[0] = zone;
+        params[1] = staticEffectIndex[zone];
+        params[2] = r;
+        params[3] = g;
+        params[4] = b;
+        params[5] = (r || g || b) ? 0x02 : 0x00;
+        params[12] = 0x00; // live/volatile, do not persist to onboard storage
+
+        LongReport response{};
+        if(!requestLong(fx.index, 0x03, params, sizeof(params), response, err)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool LogitechHIDPP20Device::getFeature(
     std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
     std::string* err) {
