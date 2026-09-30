@@ -2,6 +2,7 @@
 
 #include "core/keymap.h"
 
+#include <QFileInfo>
 #include <QTimer>
 #include <KLocalizedString>
 
@@ -33,17 +34,64 @@ KeyboardController::~KeyboardController() = default;
 
 void KeyboardController::refresh() {
     const krgb::KeyboardModel* model = nullptr;
-    const std::string p = AW410KDevice::findDevice(&model);
-    const QString qp = QString::fromStdString(p);
-    const bool nowConnected = !p.empty();
+    const std::string alienwarePath = AW410KDevice::findDevice(&model);
 
-    if(nowConnected != connected_ || qp != path_) {
+    bool nowConnected = false;
+    QString newPath;
+    QString newModelName;
+    quint8 newModelBit = krgb::kAllModels;
+    Backend newBackend = Backend::None;
+
+    if(!alienwarePath.empty()) {
+        nowConnected = true;
+        newPath = QString::fromStdString(alienwarePath);
+        newModelName = model ? QString::fromLatin1(model->name) : QString();
+        newModelBit = model ? model->bit : krgb::kAllModels;
+        newBackend = Backend::Alienware;
+        if(logitechDevice_.isOpen()) {
+            logitechDevice_.close();
+        }
+    } else {
+        // Keep an already-open Logitech endpoint while its hidraw node exists.
+        // Otherwise rescan Logitech endpoints and validate them through HID++
+        // feature discovery before presenting them to the GUI.
+        bool logitechPresent =
+            logitechDevice_.isOpen() &&
+            QFileInfo::exists(QString::fromStdString(logitechDevice_.path()));
+        if(!logitechPresent) {
+            if(logitechDevice_.isOpen()) {
+                logitechDevice_.close();
+            }
+            std::string err;
+            logitechPresent = logitechDevice_.openKeyboard(&err);
+        }
+
+        if(logitechPresent) {
+            nowConnected = true;
+            newPath = QString::fromStdString(logitechDevice_.path());
+            newModelName = QString::fromStdString(logitechDevice_.displayName());
+            newBackend = Backend::LogitechHIDPP20;
+            if(device_.isOpen()) {
+                device_.close();
+            }
+        }
+    }
+
+    if(nowConnected != connected_ || newPath != path_ ||
+       newBackend != backend_ || newModelName != modelName_) {
         connected_ = nowConnected;
-        path_ = qp;
-        modelName_ = model ? QString::fromLatin1(model->name) : QString();
-        modelBit_ = model ? model->bit : krgb::kAllModels;
-        if(!connected_ && device_.isOpen()) {
-            device_.close();
+        path_ = newPath;
+        modelName_ = newModelName;
+        modelBit_ = newModelBit;
+        backend_ = newBackend;
+
+        if(!connected_) {
+            if(device_.isOpen()) {
+                device_.close();
+            }
+            if(logitechDevice_.isOpen()) {
+                logitechDevice_.close();
+            }
         }
         Q_EMIT connectionChanged(connected_, path_);
     }
@@ -57,14 +105,28 @@ std::uint8_t activeBit(const krgb::AW410KDevice& dev) {
 } // namespace
 
 bool KeyboardController::ensureOpen() {
-    if(device_.isOpen()) {
+    if(backend_ == Backend::LogitechHIDPP20) {
+        if(logitechDevice_.isOpen()) {
+            return true;
+        }
+        std::string err;
+        if(!logitechDevice_.openKeyboard(&err)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
         return true;
     }
+
+    if(backend_ == Backend::Alienware && device_.isOpen()) {
+        return true;
+    }
+
     std::string err;
     if(!device_.open(&err)) {
         Q_EMIT error(QString::fromStdString(err));
         return false;
     }
+    backend_ = Backend::Alienware;
     return true;
 }
 
@@ -73,6 +135,16 @@ bool KeyboardController::applySolid(const QColor& color, int brightnessPct) {
         return false;
     }
     const QColor c = scaled(color, brightnessPct);
+
+    if(backend_ == Backend::LogitechHIDPP20) {
+        std::string err;
+        if(!logitechDevice_.setSolid(c.red(), c.green(), c.blue(), &err)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
+    }
+
     if(!device_.setSolid(c.red(), c.green(), c.blue())) {
         Q_EMIT error(i18n("Failed to set solid colour."));
         return false;
@@ -82,6 +154,11 @@ bool KeyboardController::applySolid(const QColor& color, int brightnessPct) {
 
 bool KeyboardController::applyRainbow(int brightnessPct) {
     if(!ensureOpen()) {
+        return false;
+    }
+    if(backend_ == Backend::LogitechHIDPP20) {
+        Q_EMIT error(i18n("This Logitech model is connected, but the GUI rainbow "
+                          "layout is not available yet."));
         return false;
     }
     const qreal v = qBound(0, brightnessPct, 100) / 100.0;
@@ -112,6 +189,11 @@ bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, in
     if(!ensureOpen()) {
         return false;
     }
+    if(backend_ == Backend::LogitechHIDPP20) {
+        Q_EMIT error(i18n("Per-key GUI geometry is not available for this Logitech "
+                          "model yet."));
+        return false;
+    }
     const int pct = qBound(0, brightnessPct, 100);
     const std::uint8_t bit = activeBit(device_);
     std::vector<krgb::KeyColor> keys;
@@ -139,6 +221,10 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
     if(!ensureOpen()) {
         return false;
     }
+    if(backend_ == Backend::LogitechHIDPP20) {
+        Q_EMIT error(i18n("Hardware effects are not exposed in the Logitech GUI yet."));
+        return false;
+    }
     const auto mode = static_cast<Mode>(modeValue);
     ColorMode cm = ColorMode::Single;
     if(mode == Mode::Spectrum || mode == Mode::RainbowWave) {
@@ -159,6 +245,14 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
 bool KeyboardController::applyOff() {
     if(!ensureOpen()) {
         return false;
+    }
+    if(backend_ == Backend::LogitechHIDPP20) {
+        std::string err;
+        if(!logitechDevice_.setSolid(0, 0, 0, &err)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
     }
     if(!device_.setOff()) {
         Q_EMIT error(i18n("Failed to turn lighting off."));
