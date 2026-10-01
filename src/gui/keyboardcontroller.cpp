@@ -5,8 +5,17 @@
 #include "core/logitech_g810_iso105_visual.h"
 
 #include <QFileInfo>
+#include <QSocketNotifier>
+#include <QDateTime>
 #include <QTimer>
 #include <KLocalizedString>
+
+#include <fcntl.h>
+#include <linux/input.h>
+#include <unistd.h>
+
+#include <filesystem>
+#include <fstream>
 
 using krgb::AW410KDevice;
 using krgb::Mode;
@@ -14,11 +23,22 @@ using krgb::Speed;
 using krgb::Direction;
 using krgb::ColorMode;
 
+namespace fs = std::filesystem;
+
 namespace {
 
 QColor scaled(const QColor& c, int pct) {
     pct = qBound(0, pct, 100);
     return QColor(c.red() * pct / 100, c.green() * pct / 100, c.blue() * pct / 100);
+}
+
+bool readSysfsHex(const fs::path& path, unsigned& value) {
+    std::ifstream in(path);
+    if(!in) {
+        return false;
+    }
+    in >> std::hex >> value;
+    return !in.fail();
 }
 
 } // namespace
@@ -32,7 +52,9 @@ KeyboardController::KeyboardController(QObject* parent)
     refresh();
 }
 
-KeyboardController::~KeyboardController() = default;
+KeyboardController::~KeyboardController() {
+    stopG810KeyPressEffect();
+}
 
 void KeyboardController::refresh() {
     const krgb::KeyboardModel* model = nullptr;
@@ -190,6 +212,9 @@ bool KeyboardController::ensureOpen() {
 }
 
 bool KeyboardController::applySolid(const QColor& color, int brightnessPct) {
+    if(g810KeyPressActive_) {
+        stopG810KeyPressEffect();
+    }
     if(!ensureOpen()) {
         return false;
     }
@@ -212,6 +237,9 @@ bool KeyboardController::applySolid(const QColor& color, int brightnessPct) {
 }
 
 bool KeyboardController::applyRainbow(int brightnessPct) {
+    if(g810KeyPressActive_) {
+        stopG810KeyPressEffect();
+    }
     if(!ensureOpen()) {
         return false;
     }
@@ -297,6 +325,9 @@ bool KeyboardController::applyRainbow(int brightnessPct) {
 }
 
 bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, int brightnessPct) {
+    if(g810KeyPressActive_) {
+        stopG810KeyPressEffect();
+    }
     if(!ensureOpen()) {
         return false;
     }
@@ -385,6 +416,9 @@ bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, in
 
 bool KeyboardController::applyZones(
     const QHash<int, QColor>& zoneColors, int brightnessPct) {
+    if(g810KeyPressActive_) {
+        stopG810KeyPressEffect();
+    }
 
     if(!ensureOpen()) {
         return false;
@@ -426,6 +460,13 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
     const auto mode = static_cast<Mode>(modeValue);
 
     if(backend_ == Backend::LogitechHIDPP20) {
+        if(mode == Mode::Pulse && logitechG810Iso105Visual_) {
+            const int fadeMs = exactPeriodMs > 0 ? exactPeriodMs : 150;
+            return startG810KeyPressEffect(color, brightnessPct, fadeMs);
+        }
+        if(g810KeyPressActive_) {
+            stopG810KeyPressEffect();
+        }
         if(!supportsEffectMode(modeValue)) {
             Q_EMIT error(i18n("This hardware effect is not available for the connected Logitech keyboard."));
             return false;
@@ -503,7 +544,256 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
     return true;
 }
 
+bool KeyboardController::openG810InputMonitors(QString& error) {
+    stopG810KeyPressEffect();
+
+    const unsigned wantedPid = logitechDevice_.productId();
+    std::error_code ec;
+    const fs::path inputClass("/sys/class/input");
+    if(!fs::exists(inputClass, ec)) {
+        error = i18n("Linux input device directory is unavailable.");
+        return false;
+    }
+
+    for(const auto& entry : fs::directory_iterator(inputClass, ec)) {
+        if(ec) {
+            break;
+        }
+
+        const std::string name = entry.path().filename().string();
+        if(name.rfind("event", 0) != 0) {
+            continue;
+        }
+
+        unsigned vendor = 0;
+        unsigned product = 0;
+        const fs::path idDir = entry.path() / "device" / "id";
+        if(!readSysfsHex(idDir / "vendor", vendor) ||
+           !readSysfsHex(idDir / "product", product) ||
+           vendor != krgb::LogitechHIDPP20Device::kVendorId ||
+           product != wantedPid) {
+            continue;
+        }
+
+        const std::string devPath = "/dev/input/" + name;
+        const int fd = ::open(devPath.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if(fd < 0) {
+            continue;
+        }
+
+        auto* notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+        connect(notifier, &QSocketNotifier::activated, this,
+                [this, fd](QSocketDescriptor, QSocketNotifier::Type) {
+                    handleG810InputReady(fd);
+                });
+        g810InputFds_.push_back(fd);
+        g810InputNotifiers_.push_back(notifier);
+        g810LastScanByFd_.insert(fd, 0);
+    }
+
+    if(g810InputFds_.isEmpty()) {
+        error = i18n(
+            "Could not open the G810 keyboard input event device. "
+            "Install/reload the k-rgb udev rule and replug the keyboard.");
+        return false;
+    }
+    return true;
+}
+
+void KeyboardController::stopG810KeyPressEffect() {
+    if(g810KeyPressFadeTimer_) {
+        g810KeyPressFadeTimer_->stop();
+        g810KeyPressFadeTimer_->deleteLater();
+        g810KeyPressFadeTimer_ = nullptr;
+    }
+
+    for(QSocketNotifier* notifier : g810InputNotifiers_) {
+        if(notifier) {
+            notifier->setEnabled(false);
+            notifier->deleteLater();
+        }
+    }
+    g810InputNotifiers_.clear();
+
+    for(int fd : g810InputFds_) {
+        if(fd >= 0) {
+            ::close(fd);
+        }
+    }
+    g810InputFds_.clear();
+    g810LastScanByFd_.clear();
+    g810KeyPressStartedMs_.clear();
+    g810KeyPressActive_ = false;
+}
+
+bool KeyboardController::startG810KeyPressEffect(
+    const QColor& foreground, int brightnessPct, int fadeMs) {
+
+    if(!ensureOpen() || backend_ != Backend::LogitechHIDPP20 ||
+       !logitechG810Iso105Visual_) {
+        Q_EMIT error(i18n("Key Press is only available for the Logitech G810."));
+        return false;
+    }
+
+    g810KeyPressForeground_ = scaled(foreground, brightnessPct);
+    g810KeyPressBackground_ = QColor(0, 0, 0);
+    g810KeyPressFadeMs_ = qBound(1, fadeMs, 65535);
+
+    QString inputError;
+    if(!openG810InputMonitors(inputError)) {
+        Q_EMIT error(inputError);
+        return false;
+    }
+
+    // LGS default: foreground #00dcff, background #000000, rate 150 ms.
+    // 0x8070 exposes no Key Press firmware effect on the G810, so render the
+    // keyboard portion through 0x8080 and use evdev key events as the trigger.
+    std::string err;
+    if(!logitechDevice_.setSolid(
+           static_cast<std::uint8_t>(g810KeyPressBackground_.red()),
+           static_cast<std::uint8_t>(g810KeyPressBackground_.green()),
+           static_cast<std::uint8_t>(g810KeyPressBackground_.blue()), &err)) {
+        stopG810KeyPressEffect();
+        Q_EMIT error(QString::fromStdString(err));
+        return false;
+    }
+
+    g810KeyPressActive_ = true;
+    g810KeyPressFadeTimer_ = new QTimer(this);
+    g810KeyPressFadeTimer_->setInterval(25);
+    connect(g810KeyPressFadeTimer_, &QTimer::timeout, this, [this]() {
+        if(!g810KeyPressActive_ || g810KeyPressStartedMs_.isEmpty()) {
+            return;
+        }
+        renderG810KeyPressFrame();
+    });
+    g810KeyPressFadeTimer_->start();
+    return true;
+}
+
+void KeyboardController::handleG810InputReady(int fd) {
+    input_event events[32]{};
+    for(;;) {
+        const ssize_t n = ::read(fd, events, sizeof(events));
+        if(n <= 0) {
+            break;
+        }
+
+        const int count = static_cast<int>(n / sizeof(input_event));
+        for(int i = 0; i < count; ++i) {
+            const input_event& ev = events[i];
+            if(ev.type == EV_MSC && ev.code == MSC_SCAN) {
+                g810LastScanByFd_[fd] = static_cast<quint32>(ev.value);
+                continue;
+            }
+            if(ev.type != EV_KEY) {
+                continue;
+            }
+
+            const quint32 scan = g810LastScanByFd_.value(fd, 0);
+            g810LastScanByFd_[fd] = 0;
+            if(ev.value != 1 || scan == 0) {
+                continue; // key-down only; ignore releases and repeats
+            }
+
+            // Linux HID input commonly exposes MSC_SCAN as
+            // (usagePage << 16) | usage.  G810 keyboard keys are page 0x07.
+            const quint16 usagePage = static_cast<quint16>((scan >> 16) & 0xffff);
+            const quint16 usage = static_cast<quint16>(scan & 0xffff);
+            if(usagePage == 0x0007 && usage <= 0xff) {
+                handleG810KeyPress(
+                    krgb::logitech::g610_g810::kKeyboardKeyType,
+                    static_cast<std::uint8_t>(usage));
+            }
+        }
+    }
+}
+
+void KeyboardController::handleG810KeyPress(
+    std::uint16_t keyType, std::uint8_t keyId) {
+
+    if(!g810KeyPressActive_ ||
+       keyType != krgb::logitech::g610_g810::kKeyboardKeyType ||
+       !krgb::logitech::g610_g810::findPhysical(keyType, keyId)) {
+        return;
+    }
+
+    const quint32 address =
+        (static_cast<quint32>(keyType) << 8) | static_cast<quint32>(keyId);
+    g810KeyPressStartedMs_[address] =
+        static_cast<qint64>(QDateTime::currentMSecsSinceEpoch());
+    renderG810KeyPressFrame();
+}
+
+bool KeyboardController::renderG810KeyPressFrame(bool) {
+    if(!g810KeyPressActive_) {
+        return false;
+    }
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    std::vector<krgb::LogitechHIDPP20KeyColor> keyboard;
+    keyboard.reserve(
+        krgb::logitech::g810_iso105_visual::kExpectedElementCount);
+
+    QList<quint32> expired;
+    for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+        if(element.keyType != krgb::logitech::g610_g810::kKeyboardKeyType) {
+            continue;
+        }
+
+        const quint32 address =
+            (static_cast<quint32>(element.keyType) << 8) |
+            static_cast<quint32>(element.keyId);
+        QColor color = g810KeyPressBackground_;
+
+        const auto it = g810KeyPressStartedMs_.constFind(address);
+        if(it != g810KeyPressStartedMs_.cend()) {
+            const qint64 elapsed = now - it.value();
+            if(elapsed >= g810KeyPressFadeMs_) {
+                expired.push_back(address);
+            } else {
+                const qreal amount =
+                    1.0 - static_cast<qreal>(qMax<qint64>(0, elapsed)) /
+                              static_cast<qreal>(g810KeyPressFadeMs_);
+                color = QColor(
+                    static_cast<int>(g810KeyPressBackground_.red() +
+                        (g810KeyPressForeground_.red() -
+                         g810KeyPressBackground_.red()) * amount),
+                    static_cast<int>(g810KeyPressBackground_.green() +
+                        (g810KeyPressForeground_.green() -
+                         g810KeyPressBackground_.green()) * amount),
+                    static_cast<int>(g810KeyPressBackground_.blue() +
+                        (g810KeyPressForeground_.blue() -
+                         g810KeyPressBackground_.blue()) * amount));
+            }
+        }
+
+        keyboard.push_back({
+            element.keyId,
+            static_cast<std::uint8_t>(color.red()),
+            static_cast<std::uint8_t>(color.green()),
+            static_cast<std::uint8_t>(color.blue()),
+        });
+    }
+
+    for(quint32 address : expired) {
+        g810KeyPressStartedMs_.remove(address);
+    }
+
+    std::string err;
+    if(!logitechDevice_.setPerKey8080Colors(
+           krgb::logitech::g610_g810::kKeyboardKeyType, keyboard, &err)) {
+        Q_EMIT error(QString::fromStdString(err));
+        stopG810KeyPressEffect();
+        return false;
+    }
+    return true;
+}
+
 bool KeyboardController::applyOff() {
+    if(g810KeyPressActive_) {
+        stopG810KeyPressEffect();
+    }
     if(!ensureOpen()) {
         return false;
     }
