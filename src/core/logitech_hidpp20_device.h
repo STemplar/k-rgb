@@ -249,6 +249,34 @@ struct LogitechHIDPP20ColorLedInfo {
     std::vector<LogitechHIDPP20ColorLedZoneInfo> zones;
 };
 
+// Read-only 0x8070 diagnostic values. Persistence uses the protocol values
+// accepted by GetEffectSettings/GetZoneEffect: 0 = volatile (RAM),
+// 1 = non-volatile (EEPROM).
+struct LogitechHIDPP20ColorLedNvConfig {
+    std::uint16_t capability = 0;
+    std::uint8_t state = 0;
+    std::uint8_t param1 = 0;
+    std::uint8_t param2 = 0;
+};
+
+struct LogitechHIDPP20ColorLedEffectSettings {
+    std::uint8_t zoneIndex = 0;
+    std::uint8_t persistence = 0;
+    std::uint8_t r = 0;
+    std::uint8_t g = 0;
+    std::uint8_t b = 0;
+    std::uint16_t periodMs = 0;
+    std::uint8_t brightness = 0;
+    std::uint8_t effectParam = 0;
+};
+
+struct LogitechHIDPP20ColorLedZoneEffectState {
+    std::uint8_t zoneIndex = 0;
+    std::uint8_t persistence = 0;
+    std::uint8_t effectIndex = 0;
+    std::array<std::uint8_t, 10> params{};
+};
+
 struct LogitechHIDPP20PerKey8081Info {
     std::vector<std::uint8_t> zoneIds;
 };
@@ -414,6 +442,20 @@ public:
                                    std::string* err = nullptr);
     bool getColorLed8070Info(LogitechHIDPP20ColorLedInfo& info,
                              std::string* err = nullptr);
+
+    // Read-only 0x8070 state/configuration diagnostics.
+    bool getColorLed8070NvConfig(std::uint16_t capability,
+                                 LogitechHIDPP20ColorLedNvConfig& config,
+                                 std::string* err = nullptr);
+    bool getColorLed8070EffectSettings(
+        std::uint8_t zoneIndex, std::uint8_t persistence,
+        LogitechHIDPP20ColorLedEffectSettings& settings,
+        std::string* err = nullptr);
+    bool getColorLed8070ZoneEffect(
+        std::uint8_t zoneIndex, std::uint8_t persistence,
+        LogitechHIDPP20ColorLedZoneEffectState& state,
+        std::string* err = nullptr);
+
     bool getPerKey8081Info(LogitechHIDPP20PerKey8081Info& info,
                            std::string* err = nullptr);
     bool getRgbEffects8071Info(LogitechHIDPP20RgbEffectsInfo& info,
