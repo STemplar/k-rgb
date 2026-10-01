@@ -331,7 +331,10 @@ QWidget* MainWindow::buildKeyboardPage() {
     defaultsLayout->setContentsMargins(0, 0, 0, 0);
     effectDefaultLabel_ = new QLabel(defaultsRow);
     effectDefaultLabel_->setWordWrap(true);
-    effectDefaultsBtn_ = new QPushButton(i18n("Use LGS defaults"), defaultsRow);
+    effectDefaultsBtn_ = new QPushButton(i18n("Restore LGS defaults"), defaultsRow);
+    effectDefaultsBtn_->setToolTip(
+        i18n("Restore the original Logitech Gaming Software values for this effect. "
+             "Use Apply to send them to the keyboard."));
     defaultsLayout->addWidget(effectDefaultLabel_, 1);
     defaultsLayout->addWidget(effectDefaultsBtn_);
     defaultsRow->hide();
