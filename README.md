@@ -85,8 +85,11 @@ Known lighting features such as `0x8040`, `0x8070`, `0x8071`,
 than individually probed or assigned by USB PID. Features marked by Logitech as
 hidden, engineering, manufacturing-deactivatable, or compliance-deactivatable
 remain visible in diagnostics but are not automatically activated by normal
-capability discovery. For `0x8080`, the device-reported key-type
-bitmap/counts/IDs remain authoritative.
+capability discovery. For `0x8080`, k-rgb keeps firmware-reported counts separate from the wider
+GetKeyColors candidate address space. For G610/G810 models with a matching LGS
+layout resource, diagnostics also intersect those candidates with the physical
+geometry and report a `physical` count; candidate-only addresses are retained
+and explicitly marked rather than discarded.
 
 Known PIDs are used only for USB identity, udev permissions, optional geometry
 metadata, and properties or quirks that HID++ does not report. Unknown Logitech

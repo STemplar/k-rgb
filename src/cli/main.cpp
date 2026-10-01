@@ -377,9 +377,10 @@ int runLogitech(const std::vector<std::string>& a) {
     }
 
     const std::string keyboardName = dev.displayName();
+    const auto* knownDevice = logitechKnownDeviceForProductId(dev.productId());
     std::uint8_t geometryModelMask = 0;
-    if(const auto* known = logitechKnownDeviceForProductId(dev.productId())) {
-        switch(known->model) {
+    if(knownDevice) {
+        switch(knownDevice->model) {
             case LogitechKnownModel::G610Orion:
                 geometryModelMask = logitech::g610_g810::kModelG610;
                 break;
@@ -415,6 +416,73 @@ int runLogitech(const std::vector<std::string>& a) {
         }
         return geometry;
     };
+
+    auto inferDeviceGeometry = [&]() {
+        if(geometryModelMask == 0) {
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
+
+        LogitechHIDPP20KeyboardLayoutInfo layoutInfo;
+        std::string layoutError;
+        if(!dev.getKeyboardLayout(layoutInfo, &layoutError)) {
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
+
+        const char* geometryName = nullptr;
+
+        // Layouts whose physical form differs from the broad family mapping.
+        if(layoutInfo.countryCode == 0x0a) {
+            geometryName = "JIS108";
+        } else if(layoutInfo.countryCode == 0x37) {
+            geometryName = "INTL104";
+        } else if((geometryModelMask & logitech::g610_g810::kModelG810) != 0 &&
+                  (layoutInfo.countryCode == 0x09 ||
+                   layoutInfo.countryCode == 0x3e)) {
+            geometryName = "KOR106";
+        } else if(layoutInfo.countryCode == 0x33) {
+            // Shipped G610/G810 THAI resources use the ANSI104 physical set.
+            geometryName = "ANSI104";
+        } else {
+            const char* family = logitechKeyboardLayoutFamily(layoutInfo.countryCode);
+            if(family && std::strcmp(family, "ANSI") == 0) {
+                geometryName = "ANSI104";
+            } else if(family && std::strncmp(family, "ISO/", 4) == 0) {
+                geometryName = "ISO105";
+            }
+        }
+
+        if(!geometryName) {
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
+
+        const auto* geometry = logitech::g610_g810::findGeometry(geometryName);
+        if(!geometry ||
+           !logitech::g610_g810::geometrySupportsModel(*geometry,
+                                                       geometryModelMask)) {
+            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
+        }
+        return geometry;
+    };
+
+    auto isPhysicalLightingAddress =
+        [&](const logitech::g610_g810::KeyboardGeometry& geometry,
+            std::uint16_t keyType, std::uint8_t keyId) {
+            switch(keyType) {
+                case logitech::g610_g810::kKeyboardKeyType:
+                    return logitech::g610_g810::geometryHasKey(geometry, keyId);
+                case logitech::g610_g810::kMediaKeyType:
+                    return logitech::g610_g810::findById(
+                               logitech::g610_g810::kMedia, keyId) != nullptr;
+                case logitech::g610_g810::kLogoKeyType:
+                    return logitech::g610_g810::findById(
+                               logitech::g610_g810::kLogo, keyId) != nullptr;
+                case logitech::g610_g810::kIndicatorKeyType:
+                    return logitech::g610_g810::findById(
+                               logitech::g610_g810::kIndicators, keyId) != nullptr;
+                default:
+                    return false;
+            }
+        };
 
     if(sub == "layouts") {
         if(a.size() != 2) {
@@ -463,8 +531,15 @@ int runLogitech(const std::vector<std::string>& a) {
         std::printf("0x8080 fn0 raw[5..6]  : %u\n",
                     static_cast<unsigned>(info.maxKeyCount));
 
+        const auto* physicalGeometry = inferDeviceGeometry();
+        if(physicalGeometry) {
+            std::printf("0x8080 physical layout : %s (%s)\n",
+                        physicalGeometry->name, physicalGeometry->sources);
+        }
+
         std::size_t reportedTotal = 0;
         std::size_t candidateTotal = 0;
+        std::size_t physicalTotal = 0;
         for(const auto& type : info.types) {
             const char* name = "unknown";
             switch(type.keyType) {
@@ -478,20 +553,49 @@ int runLogitech(const std::vector<std::string>& a) {
 
             reportedTotal += type.keyCount;
             candidateTotal += type.colors.size();
-            std::printf("keyType 0x%04x %-14s reported=%u candidates=%zu\n",
-                        static_cast<unsigned>(type.keyType), name,
-                        static_cast<unsigned>(type.keyCount),
-                        type.colors.size());
+
+            std::size_t physicalCount = 0;
+            if(physicalGeometry) {
+                for(const auto& color : type.colors) {
+                    if(isPhysicalLightingAddress(*physicalGeometry,
+                                                 type.keyType, color.keyId)) {
+                        ++physicalCount;
+                    }
+                }
+                physicalTotal += physicalCount;
+                std::printf("keyType 0x%04x %-14s reported=%u candidates=%zu physical=%zu\n",
+                            static_cast<unsigned>(type.keyType), name,
+                            static_cast<unsigned>(type.keyCount),
+                            type.colors.size(), physicalCount);
+            } else {
+                std::printf("keyType 0x%04x %-14s reported=%u candidates=%zu\n",
+                            static_cast<unsigned>(type.keyType), name,
+                            static_cast<unsigned>(type.keyCount),
+                            type.colors.size());
+            }
+
             for(const auto& color : type.colors) {
-                std::printf("  id 0x%02x  RGB %3u %3u %3u\n",
+                const bool physical =
+                    physicalGeometry &&
+                    isPhysicalLightingAddress(*physicalGeometry,
+                                              type.keyType, color.keyId);
+                std::printf("  id 0x%02x  RGB %3u %3u %3u%s\n",
                             static_cast<unsigned>(color.keyId),
                             static_cast<unsigned>(color.r),
                             static_cast<unsigned>(color.g),
-                            static_cast<unsigned>(color.b));
+                            static_cast<unsigned>(color.b),
+                            physicalGeometry && !physical
+                                ? "  [candidate-only]"
+                                : "");
             }
         }
-        std::printf("0x8080 totals         : reported=%zu candidates=%zu\n",
-                    reportedTotal, candidateTotal);
+        if(physicalGeometry) {
+            std::printf("0x8080 totals         : reported=%zu candidates=%zu physical=%zu\n",
+                        reportedTotal, candidateTotal, physicalTotal);
+        } else {
+            std::printf("0x8080 totals         : reported=%zu candidates=%zu\n",
+                        reportedTotal, candidateTotal);
+        }
         return 0;
     }
 
@@ -1526,11 +1630,32 @@ int runLogitech(const std::vector<std::string>& a) {
                 reported += type.keyCount;
                 candidates += type.colors.size();
             }
-            std::printf("  0x8080 PerKeyLighting     : typeFlags=0x%04x"
-                        " advertisedTypes=%zu reported=%zu candidates=%zu\n",
-                        static_cast<unsigned>(info.typeFlags),
-                        countSetBits16(info.typeFlags),
-                        reported, candidates);
+            const auto* physicalGeometry = inferDeviceGeometry();
+            if(physicalGeometry) {
+                std::size_t physical = 0;
+                for(const auto& type : info.types) {
+                    for(const auto& color : type.colors) {
+                        if(isPhysicalLightingAddress(*physicalGeometry,
+                                                     type.keyType,
+                                                     color.keyId)) {
+                            ++physical;
+                        }
+                    }
+                }
+                std::printf("  0x8080 PerKeyLighting     : typeFlags=0x%04x"
+                            " advertisedTypes=%zu reported=%zu candidates=%zu"
+                            " physical=%zu geometry=%s\n",
+                            static_cast<unsigned>(info.typeFlags),
+                            countSetBits16(info.typeFlags),
+                            reported, candidates, physical,
+                            physicalGeometry->name);
+            } else {
+                std::printf("  0x8080 PerKeyLighting     : typeFlags=0x%04x"
+                            " advertisedTypes=%zu reported=%zu candidates=%zu\n",
+                            static_cast<unsigned>(info.typeFlags),
+                            countSetBits16(info.typeFlags),
+                            reported, candidates);
+            }
         } else {
             std::printf("  0x8080 PerKeyLighting     : query failed (%s)\n", err.c_str());
             err.clear();
