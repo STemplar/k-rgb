@@ -1220,10 +1220,13 @@ int runLogitech(const std::vector<std::string>& a) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
     }
-    std::printf("HID++    : %u.%u\n",
-                static_cast<unsigned>(capabilities.protocolMajor),
-                static_cast<unsigned>(capabilities.protocolMinor));
-    std::printf("features : %zu (complete Feature Set enumeration)\n",
+    std::printf("HID++ protocol : %u\n",
+                static_cast<unsigned>(capabilities.protocol.protocolNumber));
+    if(capabilities.protocol.hasTargetSoftwareHint()) {
+        std::printf("target software: 0x%02x\n",
+                    static_cast<unsigned>(capabilities.protocol.targetSoftware));
+    }
+    std::printf("features       : %zu (ROOT + complete Feature Set enumeration)\n",
                 capabilities.features.size());
 
     for(const auto& feature : capabilities.features) {
@@ -1234,13 +1237,34 @@ int runLogitech(const std::vector<std::string>& a) {
         const std::string_view domain = catalog
             ? logitechHIDPP20FeatureDomainName(catalog->domain)
             : std::string_view{"unknown"};
-        std::printf("  index 0x%02x  id 0x%04x  type 0x%02x  version %-3u  %-10.*s %.*s\n",
-                    static_cast<unsigned>(feature.index),
-                    static_cast<unsigned>(feature.featureId),
-                    static_cast<unsigned>(feature.type),
-                    static_cast<unsigned>(feature.version),
-                    static_cast<int>(domain.size()), domain.data(),
-                    static_cast<int>(name.size()), name.data());
+        std::string flagText;
+        if(feature.isObsolete()) flagText += " obsolete";
+        if(feature.isHidden()) flagText += " hidden";
+        if(feature.isEngineering()) flagText += " engineering";
+        if(feature.isManufacturingDeactivatable()) flagText += " manufacturing";
+        if(feature.isComplianceDeactivatable()) flagText += " compliance";
+        if(flagText.empty()) flagText = " normal";
+
+        if(feature.versionKnown) {
+            std::printf("  index 0x%02x  id 0x%04x  type 0x%02x  version %-3u"
+                        "  %-10.*s %.*s [%s]\n",
+                        static_cast<unsigned>(feature.index),
+                        static_cast<unsigned>(feature.featureId),
+                        static_cast<unsigned>(feature.type),
+                        static_cast<unsigned>(feature.version),
+                        static_cast<int>(domain.size()), domain.data(),
+                        static_cast<int>(name.size()), name.data(),
+                        flagText.c_str() + 1);
+        } else {
+            std::printf("  index 0x%02x  id 0x%04x  type 0x%02x  version   -"
+                        "  %-10.*s %.*s [%s]\n",
+                        static_cast<unsigned>(feature.index),
+                        static_cast<unsigned>(feature.featureId),
+                        static_cast<unsigned>(feature.type),
+                        static_cast<int>(domain.size()), domain.data(),
+                        static_cast<int>(name.size()), name.data(),
+                        flagText.c_str() + 1);
+        }
     }
 
     std::vector<LogitechHIDPP20FirmwareInfo> fw;
