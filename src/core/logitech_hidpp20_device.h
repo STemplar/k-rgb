@@ -139,6 +139,10 @@ struct LogitechHIDPP20PerKeyTypeInfo {
 
 struct LogitechHIDPP20PerKeyInfo {
     std::uint16_t typeFlags = 0;
+    // Raw fn0 payload words at offsets 3..4 and 5..6. Some references name
+    // these keyTypeCount/maxKeyCount, but hardware can disagree with the
+    // populated typeFlags/fn1 topology (for example the G810 reports 2/0
+    // while four key types are populated). Keep them for diagnostics only.
     std::uint16_t keyTypeCount = 0;
     std::uint16_t maxKeyCount = 0;
     std::vector<LogitechHIDPP20PerKeyTypeInfo> types;

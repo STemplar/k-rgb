@@ -214,6 +214,15 @@ void usageCase() {
         "  krgb-cli case reset\n");
 }
 
+std::size_t countSetBits16(std::uint16_t value) {
+    std::size_t count = 0;
+    while(value != 0) {
+        count += value & 1u;
+        value >>= 1;
+    }
+    return count;
+}
+
 void usageLogitech() {
     std::printf(
         "Logitech HID++ 2.0:\n"
@@ -442,13 +451,20 @@ int runLogitech(const std::vector<std::string>& a) {
             return 1;
         }
 
-        std::printf("0x8080 typeFlags   : 0x%04x\n",
-                    static_cast<unsigned>(info.typeFlags));
-        std::printf("0x8080 keyTypes    : %u\n",
+        std::printf("0x8080 typeFlags      : 0x%04x (%zu advertised types)\n",
+                    static_cast<unsigned>(info.typeFlags),
+                    countSetBits16(info.typeFlags));
+        // Keep the two remaining fn0 words visible for reverse-engineering,
+        // but do not present them as authoritative topology counts. On the
+        // hardware-verified G810 they read 2 and 0 while typeFlags advertises
+        // four populated key types.
+        std::printf("0x8080 fn0 raw[3..4]  : %u\n",
                     static_cast<unsigned>(info.keyTypeCount));
-        std::printf("0x8080 maxKeyCount : %u\n",
+        std::printf("0x8080 fn0 raw[5..6]  : %u\n",
                     static_cast<unsigned>(info.maxKeyCount));
 
+        std::size_t reportedTotal = 0;
+        std::size_t candidateTotal = 0;
         for(const auto& type : info.types) {
             const char* name = "unknown";
             switch(type.keyType) {
@@ -460,7 +476,9 @@ int runLogitech(const std::vector<std::string>& a) {
                 case 0x0040: name = "indicators"; break;
             }
 
-            std::printf("keyType 0x%04x %-14s reported=%u discovered=%zu\n",
+            reportedTotal += type.keyCount;
+            candidateTotal += type.colors.size();
+            std::printf("keyType 0x%04x %-14s reported=%u candidates=%zu\n",
                         static_cast<unsigned>(type.keyType), name,
                         static_cast<unsigned>(type.keyCount),
                         type.colors.size());
@@ -472,6 +490,8 @@ int runLogitech(const std::vector<std::string>& a) {
                             static_cast<unsigned>(color.b));
             }
         }
+        std::printf("0x8080 totals         : reported=%zu candidates=%zu\n",
+                    reportedTotal, candidateTotal);
         return 0;
     }
 
@@ -1500,14 +1520,17 @@ int runLogitech(const std::vector<std::string>& a) {
            LogitechHIDPP20Device::kFeaturePerKeyLighting) != nullptr) {
         LogitechHIDPP20PerKeyInfo info;
         if(dev.getPerKey8080Info(info, &err)) {
-            std::size_t addresses = 0;
-            for(const auto& type : info.types) addresses += type.colors.size();
-            std::printf("  0x8080 PerKeyLighting     : types=0x%04x keyTypes=%u"
-                        " max=%u addresses=%zu\n",
+            std::size_t reported = 0;
+            std::size_t candidates = 0;
+            for(const auto& type : info.types) {
+                reported += type.keyCount;
+                candidates += type.colors.size();
+            }
+            std::printf("  0x8080 PerKeyLighting     : typeFlags=0x%04x"
+                        " advertisedTypes=%zu reported=%zu candidates=%zu\n",
                         static_cast<unsigned>(info.typeFlags),
-                        static_cast<unsigned>(info.keyTypeCount),
-                        static_cast<unsigned>(info.maxKeyCount),
-                        addresses);
+                        countSetBits16(info.typeFlags),
+                        reported, candidates);
         } else {
             std::printf("  0x8080 PerKeyLighting     : query failed (%s)\n", err.c_str());
             err.clear();

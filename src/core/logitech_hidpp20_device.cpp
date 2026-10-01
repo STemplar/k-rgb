@@ -1386,6 +1386,8 @@ bool LogitechHIDPP20Device::getPerKey8080Info(
              static_cast<std::uint16_t>(typeRaw[5]);
 
         // Function 2 GetKeyColors pages up to 14 (keyId,R,G,B) entries.
+        // Treat returned IDs as address candidates, not as a physical-key
+        // count: hardware can expose a superset of layout-dependent IDs.
         // The response payload starts with a 4-byte function-specific header.
         std::uint16_t startIndex = 0;
         std::size_t guardPages = typeInfo.keyCount
