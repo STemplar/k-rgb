@@ -37,17 +37,17 @@ small, fast, and dependency-light.
 | --- | --- | --- | --- |
 | Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | full GUI/per-key |
 | Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | full GUI/per-key* |
-| Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | 5-zone RGB via `0x8070`; dump-derived, hardware-unverified |
-| Logitech G410 Atlas Spectrum | `046d:c330` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G413 Carbon | `046d:c33a` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G512 Carbon | `046d:c342` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G513 Carbon | `046d:c33c` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G610 Orion | `046d:c333` / `046d:c338` | HID++ endpoint discovered at runtime | per-key path implemented† |
-| Logitech G810 Orion Spectrum | `046d:c331` / `046d:c337` | HID++ endpoint discovered at runtime | per-key path implemented |
-| Logitech G815 LIGHTSYNC | `046d:c33f` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G910 Orion Spark | `046d:c32b` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G910 Orion Spectrum | `046d:c335` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
-| Logitech G PRO | `046d:c339` | HID++ endpoint discovered at runtime | recognized; HID++ lighting discovery |
+| Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | **capture-derived**: 5-zone RGB / `0x8070`; hardware-unverified |
+| Logitech G410 Atlas Spectrum | `046d:c330` | HID++ endpoint discovered at runtime | **resource-derived** per-key metadata; hardware-unverified |
+| Logitech G413 Carbon | `046d:c33a` | HID++ endpoint discovered at runtime | **capture-derived** brightness/breathing behavior; write path not implemented |
+| Logitech G512 Carbon | `046d:c342` | HID++ endpoint discovered at runtime | identity/discovery only; no matching packet dump in current evidence set |
+| Logitech G513 Carbon | `046d:c33c` | HID++ endpoint discovered at runtime | identity/discovery only; no matching packet dump in current evidence set |
+| Logitech G610 Orion | `046d:c333` / `046d:c338` | HID++ endpoint discovered at runtime | resource/reference-derived `0x8080` per-key path†; hardware-unverified |
+| Logitech G810 Orion Spectrum | `046d:c331` / `046d:c337` | HID++ endpoint discovered at runtime | `c331` **hardware-verified**; G810 packet captures also available; `c337` resource-derived |
+| Logitech G815 LIGHTSYNC | `046d:c33f` | HID++ endpoint discovered at runtime | **capture-derived** effects/per-key/logo/media/G-key protocol; k-rgb write path not implemented |
+| Logitech G910 Orion Spark | `046d:c32b` | HID++ endpoint discovered at runtime | **capture-derived** per-key/logo/G-key/M-key protocol; k-rgb write path not implemented |
+| Logitech G910 Orion Spectrum | `046d:c335` | HID++ endpoint discovered at runtime | resource/reference-derived; no matching packet dump in current evidence set |
+| Logitech G PRO | `046d:c339` | HID++ endpoint discovered at runtime | resource/reference-derived per-key protocol; ANSI87/ISO88 TKL form visually confirmed; hardware-unverified |
 
 k-rgb **auto-detects** which model is plugged in and names it in the window and
 `krgb-cli info`. Both share the same lighting protocol and LED index map (the
@@ -76,15 +76,22 @@ hardware). Unknown Logitech HID++ 2.0 lighting keyboards can therefore be
 identified and inspected without adding their PID to the protocol code first,
 provided the corresponding hidraw endpoint is accessible.
 
-The additional Logitech models above are now registered in k-rgb and have udev
-access rules. The GUI can detect these HID++ keyboards and exposes controls only
-for implemented feature paths. G213 is modeled as a five-zone RGB keyboard:
-the zone count is read from HID++ `0x8070` at runtime, while its physical
-five-zone interpretation and 1..5 region-address quirk are corroborated by the
-MatMoul G213 packet captures. The G213 path remains hardware-unverified in
-k-rgb. G610/G810 have the existing `0x8080` per-key diagnostic path; other
-models remain discovery/metadata targets until their actual hardware path is
-verified.
+The Logitech status labels distinguish evidence from implementation. **Hardware-
+verified** means tested on physical hardware in k-rgb; **capture-derived** means
+packet captures exist for that exact family but k-rgb has not verified the path
+on hardware; **resource/reference-derived** means LGS resources and/or an
+independent implementation support the mapping; **identity/discovery only**
+means k-rgb knows the product but has no matching packet dump in the current
+evidence set.
+
+G213 is modeled as a five-zone RGB keyboard: the zone count is read from HID++
+`0x8070` at runtime, while its physical five-zone interpretation and 1..5
+region-address quirk are corroborated by the G213 packet captures. G413 has
+captures for brightness and breathing, but its write path is not implemented in
+k-rgb. G815 has captures for effects, all-key/per-key writes, multimedia, G-keys
+and logo; G910 Spark has captures for keyboard colour, logo and G/M-key traffic.
+Those captures raise their protocol evidence status, but do not by themselves
+make the corresponding k-rgb write paths hardware-verified or implemented.
 
 ### Case / chassis lighting (experimental)
 
