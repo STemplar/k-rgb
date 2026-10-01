@@ -27,6 +27,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSlider>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QSystemTrayIcon>
@@ -131,6 +132,34 @@ QHash<QString, QColor> makeUsaFlag(bool logitechG810Iso105) {
         m.insert(QString::fromLatin1(k.name), color);
     }
     return m;
+}
+
+int g810LgsDefaultPeriodMs(Mode mode) {
+    switch(mode) {
+        case Mode::Breathing:   return 5000;
+        case Mode::Spectrum:    return 10000; // LGS "Color Cycle"
+        case Mode::RainbowWave: return 2000;  // LGS "Color Wave"
+        default:                return 0;
+    }
+}
+
+QString g810LgsDefaultDescription(bool solid, Mode mode) {
+    if(solid) {
+        return i18n("Colour #00dcff");
+    }
+
+    switch(mode) {
+        case Mode::Breathing:
+            return i18n("Colour #00dcff · period 5000 ms");
+        case Mode::Spectrum:
+            return i18n("Period 10000 ms");
+        case Mode::RainbowWave:
+            return i18n("Direction Right · period 2000 ms");
+        case Mode::Scanner:
+            return i18n("Star #ffff00 · sky #000019 · count 12 · rate 32");
+        default:
+            return QString();
+    }
 }
 
 } // namespace
@@ -274,12 +303,39 @@ QWidget* MainWindow::buildKeyboardPage() {
     colorButton_ = new KColorButton(QColor(0, 170, 255), page);
     form->addRow(i18n("Colour:"), colorButton_);
 
-    speedCombo_ = new QComboBox(page);
+    auto* speedRow = new QWidget(page);
+    auto* speedLayout = new QHBoxLayout(speedRow);
+    speedLayout->setContentsMargins(0, 0, 0, 0);
+
+    speedCombo_ = new QComboBox(speedRow);
     speedCombo_->addItem(i18n("Slow"),   static_cast<int>(Speed::Slowest));
     speedCombo_->addItem(i18n("Normal"), static_cast<int>(Speed::Normal));
     speedCombo_->addItem(i18n("Fast"),   static_cast<int>(Speed::Fastest));
     speedCombo_->setCurrentIndex(1);
-    form->addRow(i18n("Speed:"), speedCombo_);
+    speedLayout->addWidget(speedCombo_);
+
+    effectPeriodSpin_ = new QSpinBox(speedRow);
+    effectPeriodSpin_->setRange(1, 65535);
+    effectPeriodSpin_->setSingleStep(100);
+    effectPeriodSpin_->setSuffix(i18n(" ms"));
+    effectPeriodSpin_->setValue(5000);
+    effectPeriodSpin_->setToolTip(
+        i18n("Exact effect period. Lower values run faster; higher values run slower."));
+    effectPeriodSpin_->hide();
+    speedLayout->addWidget(effectPeriodSpin_);
+    speedLayout->addStretch();
+    form->addRow(i18n("Speed / period:"), speedRow);
+
+    auto* defaultsRow = new QWidget(page);
+    auto* defaultsLayout = new QHBoxLayout(defaultsRow);
+    defaultsLayout->setContentsMargins(0, 0, 0, 0);
+    effectDefaultLabel_ = new QLabel(defaultsRow);
+    effectDefaultLabel_->setWordWrap(true);
+    effectDefaultsBtn_ = new QPushButton(i18n("Use LGS defaults"), defaultsRow);
+    defaultsLayout->addWidget(effectDefaultLabel_, 1);
+    defaultsLayout->addWidget(effectDefaultsBtn_);
+    defaultsRow->hide();
+    form->addRow(i18n("LGS default:"), defaultsRow);
 
     directionCombo_ = new QComboBox(page);
     directionCombo_->addItem(i18n("Left"),  static_cast<int>(Direction::Left));
@@ -394,42 +450,42 @@ QWidget* MainWindow::buildKeyboardPage() {
            index < 0 || index >= modes_.size()) {
             return;
         }
+        // Selecting a G810 mode starts from the original Logitech Gaming
+        // Software defaults. Profiles loaded programmatically are untouched.
+        effectDefaultsBtn_->click();
+    });
+    connect(effectDefaultsBtn_, &QPushButton::clicked, this, [this]() {
+        const int index = modeCombo_->currentIndex();
+        if(!controller_->usesLogitechG810Iso105VisualLayout() ||
+           index < 0 || index >= modes_.size()) {
+            return;
+        }
 
-        // Apply the original G810 LGS defaults only when the user explicitly
-        // chooses a mode. Programmatic profile loading uses setCurrentIndex()
-        // and therefore preserves the profile's saved values.
-        const auto mode = static_cast<Mode>(modes_.at(index).value);
+        const ModeEntry& entry = modes_.at(index);
+        const auto mode = static_cast<Mode>(entry.value);
         const bool wasLoading = loading_;
         loading_ = true;
 
-        auto selectSpeed = [this](Speed speed) {
-            const int i = speedCombo_->findData(static_cast<int>(speed));
-            if(i >= 0) {
-                speedCombo_->setCurrentIndex(i);
-            }
-        };
-        auto selectDirection = [this](Direction direction) {
-            const int i = directionCombo_->findData(static_cast<int>(direction));
-            if(i >= 0) {
-                directionCombo_->setCurrentIndex(i);
-            }
-        };
-
-        if(modes_.at(index).solid) {
+        if(entry.solid) {
             colorButton_->setColor(QColor(QStringLiteral("#00dcff")));
         } else {
             switch(mode) {
                 case Mode::Breathing:
                     colorButton_->setColor(QColor(QStringLiteral("#00dcff")));
-                    selectSpeed(Speed::Normal);   // LGS breathing/speed = 5000 ms
+                    effectPeriodSpin_->setValue(5000);
                     break;
                 case Mode::Spectrum:
-                    selectSpeed(Speed::Slowest);  // LGS cycle/speed = 10000 ms
+                    effectPeriodSpin_->setValue(10000);
                     break;
-                case Mode::RainbowWave:
-                    selectSpeed(Speed::Fastest);  // LGS wave/speed = 2000 ms
-                    selectDirection(Direction::Right); // LGS wave/direction = 1
+                case Mode::RainbowWave: {
+                    effectPeriodSpin_->setValue(2000);
+                    const int i =
+                        directionCombo_->findData(static_cast<int>(Direction::Right));
+                    if(i >= 0) {
+                        directionCombo_->setCurrentIndex(i);
+                    }
                     break;
+                }
                 case Mode::Scanner:
                     colorButton_->setColor(QColor(QStringLiteral("#ffff00")));
                     break;
@@ -440,6 +496,11 @@ QWidget* MainWindow::buildKeyboardPage() {
 
         loading_ = wasLoading;
         onModeChanged();
+    });
+    connect(effectPeriodSpin_, &QSpinBox::editingFinished, this, [this]() {
+        if(!loading_ && controller_->isConnected()) {
+            onApply();
+        }
     });
     connect(brightnessSlider_, &QSlider::valueChanged, this, &MainWindow::onBrightnessChanged);
     connect(applyButton_, &QPushButton::clicked, this, &MainWindow::onApply);
@@ -763,6 +824,19 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
     if(si >= 0) {
         speedCombo_->setCurrentIndex(si);
     }
+    if(effectPeriodSpin_) {
+        int period = s.effectPeriodMs;
+        if(period <= 0 && s.kind == LightingSettings::Effect) {
+            switch(static_cast<Speed>(s.speed)) {
+                case Speed::Slowest: period = 10000; break;
+                case Speed::Normal:  period = 5000;  break;
+                case Speed::Fastest: period = 2000;  break;
+            }
+        }
+        if(period > 0) {
+            effectPeriodSpin_->setValue(qBound(1, period, 65535));
+        }
+    }
     const int di = directionCombo_->findData(s.direction);
     if(di >= 0) {
         directionCombo_->setCurrentIndex(di);
@@ -802,6 +876,11 @@ LightingSettings MainWindow::currentSettings() const {
     }
     s.color = colorButton_->color();
     s.speed = speedCombo_->currentData().toInt();
+    s.effectPeriodMs =
+        (controller_->usesLogitechG810Iso105VisualLayout() &&
+         s.kind == LightingSettings::Effect && effectPeriodSpin_)
+            ? effectPeriodSpin_->value()
+            : 0;
     s.direction = directionCombo_->currentData().toInt();
     s.brightness = brightnessSlider_->value();
     s.caseSet = caseController_ && caseController_->isAvailable();
@@ -875,25 +954,39 @@ void MainWindow::onModeChanged() {
     bool usesColor = m.usesColor;
     bool usesSpeed = m.usesSpeed;
     bool usesDirection = m.usesDirection;
+    const bool g810 = controller_->usesLogitechG810Iso105VisualLayout();
+    const auto mode = static_cast<Mode>(m.value);
+    const int lgsPeriod = g810 ? g810LgsDefaultPeriodMs(mode) : 0;
 
-    // LGS calls firmware effect 0x0005 "Star Effect".  The G810 resource
-    // provides star/sky colours plus software-oriented count/rate defaults,
-    // while x8070 itself only accepts the two RGB triplets.  Expose the star
-    // colour here; the protocol layer uses the LGS sky default (#000019).
-    if(controller_->usesLogitechG810Iso105VisualLayout() &&
-       static_cast<Mode>(m.value) == Mode::Scanner) {
+    // G810 uses an exact millisecond period instead of the generic
+    // Slow/Normal/Fast abstraction. Star Effect has no x8070 period field.
+    if(g810 && mode == Mode::Scanner) {
         usesColor = true;
         usesSpeed = false;
         usesDirection = false;
         colorButton_->setToolTip(
-            i18n("Star colour. The G810 LGS default sky colour is #000019."));
+            i18n("Star colour. The LGS default sky colour is #000019."));
     } else {
         colorButton_->setToolTip(QString());
     }
 
-    colorButton_->setEnabled(supported && usesColor);
-    speedCombo_->setEnabled(supported && usesSpeed);
+    const bool exactPeriod = g810 && effectMode && lgsPeriod > 0;
+    speedCombo_->setVisible(!g810);
+    speedCombo_->setEnabled(supported && usesSpeed && !g810);
+    effectPeriodSpin_->setVisible(exactPeriod);
+    effectPeriodSpin_->setEnabled(supported && exactPeriod);
     directionCombo_->setEnabled(supported && usesDirection);
+    colorButton_->setEnabled(supported && usesColor);
+
+    const QString lgsDefaults =
+        g810 ? g810LgsDefaultDescription(m.solid, mode) : QString();
+    QWidget* defaultsRow =
+        effectDefaultLabel_ ? effectDefaultLabel_->parentWidget() : nullptr;
+    if(defaultsRow) {
+        defaultsRow->setVisible(!lgsDefaults.isEmpty());
+    }
+    effectDefaultLabel_->setText(lgsDefaults);
+    effectDefaultsBtn_->setEnabled(supported && !lgsDefaults.isEmpty());
     applyButton_->setEnabled(controller_->isConnected() && supported);
 
     perKeyPanel_->setVisible(perKey && m.perkey);
@@ -1182,6 +1275,12 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     } else {
         colorButton_->setEnabled(false);
         speedCombo_->setEnabled(false);
+        if(effectPeriodSpin_) {
+            effectPeriodSpin_->setEnabled(false);
+        }
+        if(effectDefaultsBtn_) {
+            effectDefaultsBtn_->setEnabled(false);
+        }
         directionCombo_->setEnabled(false);
         if(keyboardZonePanel_) {
             keyboardZonePanel_->setVisible(false);
