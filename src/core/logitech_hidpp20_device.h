@@ -164,6 +164,34 @@ struct LogitechHIDPP20DeviceTypeInfo {
     std::string name;
 };
 
+// HID++ 0x0005 (Device Type and Name), versions 0..2.
+// Returns nullptr for values not defined by the feature specification.
+inline constexpr const char* logitechHIDPP20DeviceTypeName(std::uint8_t type) {
+    switch(type) {
+        case 0: return "Keyboard";
+        case 1: return "Remote Control";
+        case 2: return "Numpad";
+        case 3: return "Mouse";
+        case 4: return "Trackpad";
+        case 5: return "Trackball";
+        case 6: return "Presenter";
+        case 7: return "Receiver";
+        case 8: return "Headset";
+        case 9: return "Webcam";
+        case 10: return "Steering Wheel";
+        case 11: return "Joystick";
+        case 12: return "Gamepad";
+        case 13: return "Dock";
+        case 14: return "Speaker";
+        case 15: return "Microphone";
+        case 16: return "Illumination Light";
+        case 17: return "Programmable Controller";
+        case 18: return "Car Sim Pedals";
+        case 19: return "Adapter";
+        default: return nullptr;
+    }
+}
+
 struct LogitechHIDPP20BrightnessInfo {
     std::uint16_t minimum = 0;
     std::uint16_t maximum = 0;

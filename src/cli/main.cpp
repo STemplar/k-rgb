@@ -1310,10 +1310,15 @@ int runLogitech(const std::vector<std::string>& a) {
            LogitechHIDPP20Device::kFeatureDeviceTypeAndName) != nullptr) {
         LogitechHIDPP20DeviceTypeInfo info;
         if(dev.getDeviceTypeAndName(info, &err)) {
-            const char* type = info.deviceType == 0 ? "keyboard" : "other";
-            std::printf("  0x0005 device type/name   : type=%u (%s), name=%s\n",
-                        static_cast<unsigned>(info.deviceType), type,
-                        info.name.empty() ? "-" : info.name.c_str());
+            const char* type = logitechHIDPP20DeviceTypeName(info.deviceType);
+            if(type) {
+                std::printf("  0x0005 device type/name   : type=%s, name=%s\n",
+                            type, info.name.empty() ? "-" : info.name.c_str());
+            } else {
+                std::printf("  0x0005 device type/name   : type=Unknown (0x%02x), name=%s\n",
+                            static_cast<unsigned>(info.deviceType),
+                            info.name.empty() ? "-" : info.name.c_str());
+            }
         } else {
             std::printf("  0x0005 device type/name   : query failed (%s)\n", err.c_str());
             err.clear();
