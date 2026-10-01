@@ -320,6 +320,509 @@ bool LogitechHIDPP20Device::getLightingFeatures(
     return true;
 }
 
+
+bool LogitechHIDPP20Device::getDeviceTypeAndName(
+    LogitechHIDPP20DeviceTypeInfo& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureDeviceTypeAndName, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x0005 (Device Type And Name) is not supported";
+        return false;
+    }
+
+    RawReport typeRaw{};
+    std::size_t typeSize = 0;
+    if(!requestLongRaw(feature.index, 0x02, nullptr, 0, typeRaw, typeSize, err)) {
+        return false;
+    }
+    if(typeSize < 5) {
+        if(err) *err = "HID++ 0x0005 GetDeviceType returned a short response";
+        return false;
+    }
+    info.deviceType = typeRaw[4];
+
+    RawReport countRaw{};
+    std::size_t countSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, nullptr, 0,
+                       countRaw, countSize, err)) {
+        return false;
+    }
+    if(countSize < 5) {
+        if(err) *err = "HID++ 0x0005 GetDeviceNameCount returned a short response";
+        return false;
+    }
+
+    const std::size_t nameLength = countRaw[4];
+    info.name.clear();
+    info.name.reserve(nameLength);
+    for(std::size_t offset = 0; offset < nameLength;) {
+        const std::uint8_t param = static_cast<std::uint8_t>(offset);
+        RawReport nameRaw{};
+        std::size_t nameSize = 0;
+        if(!requestLongRaw(feature.index, 0x01, &param, 1,
+                           nameRaw, nameSize, err)) {
+            return false;
+        }
+        if(nameSize <= 4) {
+            if(err) *err = "HID++ 0x0005 GetDeviceName returned an empty response";
+            return false;
+        }
+
+        const std::size_t available = nameSize - 4;
+        const std::size_t take = std::min(available, nameLength - offset);
+        for(std::size_t i = 0; i < take; ++i) {
+            const char ch = static_cast<char>(nameRaw[4 + i]);
+            if(ch != '\0') {
+                info.name.push_back(ch);
+            }
+        }
+        offset += take;
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getKeyboardLayout(
+    LogitechHIDPP20KeyboardLayoutInfo& info, std::string* err) {
+
+    info = {};
+
+    // 0x4540 has a documented read-only getter whose first response byte is
+    // the HID keyboard country code. Prefer it when present. 0x4520 is retained
+    // in the feature catalogue, but its version-dependent wire format is not
+    // guessed here.
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureKeyboardInternationalLayouts, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x4540 (Keyboard International Layouts) is not supported";
+        }
+        return false;
+    }
+
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, nullptr, 0, raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 5) {
+        if(err) *err = "HID++ 0x4540 GetLayout returned a short response";
+        return false;
+    }
+
+    info.featureId = kFeatureKeyboardInternationalLayouts;
+    info.countryCode = raw[4];
+    return true;
+}
+
+bool LogitechHIDPP20Device::getBrightnessInfo(
+    LogitechHIDPP20BrightnessInfo& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureBrightnessControl, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8040 (Brightness Control) is not supported";
+        return false;
+    }
+    if(feature.version < 1) {
+        if(err) *err = "HID++ 0x8040 version is older than the documented v1 getter format";
+        return false;
+    }
+
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, nullptr, 0, raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 11) {
+        if(err) *err = "HID++ 0x8040 GetInfo returned a short response";
+        return false;
+    }
+
+    // HID++ 0x8040 v1 encodes the 16-bit steps field split around caps/min.
+    info.maximum = (static_cast<std::uint16_t>(raw[4]) << 8) | raw[5];
+    info.steps = (static_cast<std::uint16_t>(raw[10]) << 8) | raw[6];
+    info.capabilities = raw[7];
+    info.minimum = (static_cast<std::uint16_t>(raw[8]) << 8) | raw[9];
+
+    RawReport currentRaw{};
+    std::size_t currentSize = 0;
+    std::string ignored;
+    if(requestLongRaw(feature.index, 0x01, nullptr, 0,
+                      currentRaw, currentSize, &ignored) && currentSize >= 6) {
+        info.current =
+            (static_cast<std::uint16_t>(currentRaw[4]) << 8) | currentRaw[5];
+        info.hasCurrent = true;
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getDisableKeysInfo(
+    LogitechHIDPP20DisableKeysInfo& info, std::string* err) {
+
+    info = {};
+    bool found = false;
+
+    LogitechHIDPP20FeatureInfo fixed;
+    if(!getDiscoveredFeature(kFeatureDisableKeys, fixed, err)) {
+        return false;
+    }
+    if(fixed.index != 0) {
+        found = true;
+        RawReport caps{};
+        std::size_t capsSize = 0;
+        if(!requestLongRaw(fixed.index, 0x00, nullptr, 0,
+                           caps, capsSize, err)) {
+            return false;
+        }
+        if(capsSize < 5) {
+            if(err) *err = "HID++ 0x4521 GetCapabilities returned a short response";
+            return false;
+        }
+        info.disableableMask = caps[4];
+
+        RawReport state{};
+        std::size_t stateSize = 0;
+        std::string ignored;
+        if(requestLongRaw(fixed.index, 0x01, nullptr, 0,
+                          state, stateSize, &ignored) && stateSize >= 5) {
+            info.disabledMask = state[4];
+            info.hasDisabledMask = true;
+        }
+    }
+
+    LogitechHIDPP20FeatureInfo byUsage;
+    if(!getDiscoveredFeature(kFeatureDisableKeysByUsage, byUsage, err)) {
+        return false;
+    }
+    if(byUsage.index != 0) {
+        found = true;
+        RawReport caps{};
+        std::size_t capsSize = 0;
+        if(!requestLongRaw(byUsage.index, 0x00, nullptr, 0,
+                           caps, capsSize, err)) {
+            return false;
+        }
+        if(capsSize < 5) {
+            if(err) *err = "HID++ 0x4522 GetCapabilities returned a short response";
+            return false;
+        }
+        info.maxDisabledUsages = caps[4];
+    }
+
+    if(!found) {
+        if(err) *err = "HID++ keyboard-disable features are not supported";
+        return false;
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getReprogrammableControls(
+    LogitechHIDPP20ControlsInfo& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    std::uint16_t featureId = 0;
+
+    // Prefer the newest control table the device actually reports.
+    for(int id = 0x1b04; id >= 0x1b00; --id) {
+        LogitechHIDPP20FeatureInfo candidate;
+        if(!getDiscoveredFeature(static_cast<std::uint16_t>(id), candidate, err)) {
+            return false;
+        }
+        if(candidate.index != 0) {
+            feature = candidate;
+            featureId = static_cast<std::uint16_t>(id);
+            break;
+        }
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ reprogrammable-controls feature is not supported";
+        return false;
+    }
+
+    RawReport countRaw{};
+    std::size_t countSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, nullptr, 0,
+                       countRaw, countSize, err)) {
+        return false;
+    }
+    if(countSize < 5) {
+        if(err) *err = "HID++ reprogrammable-controls GetCount returned a short response";
+        return false;
+    }
+
+    info.featureId = featureId;
+    const std::uint8_t count = countRaw[4];
+    info.controls.reserve(count);
+
+    for(std::uint16_t i = 0; i < count; ++i) {
+        const std::uint8_t index = static_cast<std::uint8_t>(i);
+        RawReport raw{};
+        std::size_t rawSize = 0;
+        if(!requestLongRaw(feature.index, 0x01, &index, 1,
+                           raw, rawSize, err)) {
+            return false;
+        }
+        if(rawSize < 9) {
+            if(err) *err = "HID++ reprogrammable-controls GetCidInfo returned a short response";
+            return false;
+        }
+
+        LogitechHIDPP20ControlInfo item;
+        item.controlId = (static_cast<std::uint16_t>(raw[4]) << 8) | raw[5];
+        item.taskId = (static_cast<std::uint16_t>(raw[6]) << 8) | raw[7];
+        item.flags = raw[8];
+        if(rawSize >= 13 && featureId == 0x1b04) {
+            item.position = raw[9];
+            item.group = raw[10];
+            item.groupMask = raw[11];
+            item.flags |= static_cast<std::uint16_t>(raw[12]) << 8;
+        }
+        info.controls.push_back(item);
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getColorLed8070Info(
+    LogitechHIDPP20ColorLedInfo& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        return false;
+    }
+
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, nullptr, 0, raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 9) {
+        if(err) *err = "HID++ 0x8070 GetInfo returned a short response";
+        return false;
+    }
+
+    info.zoneCount = raw[4];
+    info.nvCapabilities =
+        (static_cast<std::uint16_t>(raw[5]) << 8) | raw[6];
+    info.extCapabilities =
+        (static_cast<std::uint16_t>(raw[7]) << 8) | raw[8];
+    info.zones.reserve(info.zoneCount);
+
+    for(std::uint16_t z = 0; z < info.zoneCount; ++z) {
+        const std::uint8_t zone = static_cast<std::uint8_t>(z);
+        RawReport zoneRaw{};
+        std::size_t zoneSize = 0;
+        if(!requestLongRaw(feature.index, 0x01, &zone, 1,
+                           zoneRaw, zoneSize, err)) {
+            return false;
+        }
+        if(zoneSize < 9) {
+            if(err) *err = "HID++ 0x8070 GetZoneInfo returned a short response";
+            return false;
+        }
+
+        LogitechHIDPP20ColorLedZoneInfo zoneInfo;
+        zoneInfo.zoneIndex = zoneRaw[4];
+        zoneInfo.location =
+            (static_cast<std::uint16_t>(zoneRaw[5]) << 8) | zoneRaw[6];
+        zoneInfo.effectCount = zoneRaw[7];
+        zoneInfo.persistencyCapabilities = zoneRaw[8];
+        zoneInfo.effects.reserve(zoneInfo.effectCount);
+
+        for(std::uint16_t e = 0; e < zoneInfo.effectCount; ++e) {
+            const std::uint8_t params[2] = {
+                zone, static_cast<std::uint8_t>(e)
+            };
+            RawReport effectRaw{};
+            std::size_t effectSize = 0;
+            if(!requestLongRaw(feature.index, 0x02, params, sizeof(params),
+                               effectRaw, effectSize, err)) {
+                return false;
+            }
+            if(effectSize < 12) {
+                if(err) *err = "HID++ 0x8070 GetZoneEffectInfo returned a short response";
+                return false;
+            }
+
+            zoneInfo.effects.push_back({
+                effectRaw[4],
+                effectRaw[5],
+                static_cast<std::uint16_t>(
+                    (static_cast<std::uint16_t>(effectRaw[6]) << 8) |
+                     effectRaw[7]),
+                static_cast<std::uint16_t>(
+                    (static_cast<std::uint16_t>(effectRaw[8]) << 8) |
+                     effectRaw[9]),
+                static_cast<std::uint16_t>(
+                    (static_cast<std::uint16_t>(effectRaw[10]) << 8) |
+                     effectRaw[11])
+            });
+        }
+        info.zones.push_back(std::move(zoneInfo));
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getPerKey8081Info(
+    LogitechHIDPP20PerKey8081Info& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeaturePerKeyLighting2, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8081 (Per Key Lighting 2) is not supported";
+        return false;
+    }
+
+    for(std::uint16_t page = 0; page < 3; ++page) {
+        const std::uint8_t params[3] = {
+            0x00, static_cast<std::uint8_t>(page), 0x00
+        };
+        RawReport raw{};
+        std::size_t rawSize = 0;
+        if(!requestLongRaw(feature.index, 0x00, params, sizeof(params),
+                           raw, rawSize, err)) {
+            return false;
+        }
+        if(rawSize < 20) {
+            if(err) *err = "HID++ 0x8081 zone-presence response is too short";
+            return false;
+        }
+
+        for(std::uint16_t byte = 0; byte < 14; ++byte) {
+            const std::uint8_t bits = raw[6 + byte];
+            for(std::uint16_t bit = 0; bit < 8; ++bit) {
+                if((bits & (1u << bit)) == 0) {
+                    continue;
+                }
+                const std::uint16_t zoneId = page * 112u + byte * 8u + bit;
+                if(zoneId <= 255u) {
+                    info.zoneIds.push_back(static_cast<std::uint8_t>(zoneId));
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getReportRateInfo(
+    LogitechHIDPP20ReportRateInfo& info, std::string* err) {
+
+    info = {};
+
+    LogitechHIDPP20FeatureInfo extended;
+    if(!getDiscoveredFeature(kFeatureExtendedAdjustableReportRate, extended, err)) {
+        return false;
+    }
+    if(extended.index != 0) {
+        RawReport raw{};
+        std::size_t rawSize = 0;
+        if(!requestLongRaw(extended.index, 0x01, nullptr, 0,
+                           raw, rawSize, err)) {
+            return false;
+        }
+        if(rawSize < 6) {
+            if(err) *err = "HID++ 0x8061 GetActualReportRateList returned a short response";
+            return false;
+        }
+        info.supportedMask =
+            (static_cast<std::uint16_t>(raw[4]) << 8) | raw[5];
+        return true;
+    }
+
+    LogitechHIDPP20FeatureInfo legacy;
+    if(!getDiscoveredFeature(kFeatureAdjustableReportRate, legacy, err)) {
+        return false;
+    }
+    if(legacy.index == 0) {
+        if(err) *err = "HID++ report-rate feature is not supported";
+        return false;
+    }
+
+    RawReport listRaw{};
+    std::size_t listSize = 0;
+    if(!requestLongRaw(legacy.index, 0x00, nullptr, 0,
+                       listRaw, listSize, err)) {
+        return false;
+    }
+    if(listSize < 5) {
+        if(err) *err = "HID++ 0x8060 GetReportRateList returned a short response";
+        return false;
+    }
+    info.supportedMask = listRaw[4];
+
+    RawReport currentRaw{};
+    std::size_t currentSize = 0;
+    std::string ignored;
+    if(requestLongRaw(legacy.index, 0x01, nullptr, 0,
+                      currentRaw, currentSize, &ignored) && currentSize >= 5) {
+        info.current = currentRaw[4];
+        info.hasCurrent = true;
+    }
+    return true;
+}
+
+bool LogitechHIDPP20Device::getModeStatusInfo(
+    LogitechHIDPP20ModeStatusInfo& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureModeStatus, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8090 (Mode Status) is not supported";
+        return false;
+    }
+    if(feature.version < 1) {
+        if(err) *err = "HID++ 0x8090 version is older than the documented v1 getter format";
+        return false;
+    }
+
+    RawReport statusRaw{};
+    std::size_t statusSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, nullptr, 0,
+                       statusRaw, statusSize, err)) {
+        return false;
+    }
+    if(statusSize < 6) {
+        if(err) *err = "HID++ 0x8090 GetModeStatus returned a short response";
+        return false;
+    }
+    info.status0 = statusRaw[4];
+    info.status1 = statusRaw[5];
+
+    RawReport capsRaw{};
+    std::size_t capsSize = 0;
+    if(!requestLongRaw(feature.index, 0x02, nullptr, 0,
+                       capsRaw, capsSize, err)) {
+        return false;
+    }
+    if(capsSize < 6) {
+        if(err) *err = "HID++ 0x8090 GetDeviceConfig returned a short response";
+        return false;
+    }
+    info.capabilities =
+        (static_cast<std::uint16_t>(capsRaw[4]) << 8) | capsRaw[5];
+    return true;
+}
+
 bool LogitechHIDPP20Device::probeKeyboard(std::string* err) {
     LogitechHIDPP20Capabilities capabilities;
     if(!getCapabilities(capabilities, err)) {
