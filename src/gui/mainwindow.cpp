@@ -294,13 +294,12 @@ QWidget* MainWindow::buildKeyboardPage() {
     perKeyPanel_->setVisible(false);
     v->addWidget(perKeyPanel_, 1);
 
-    // Keyboard zone editor (used by HID++ zone-based keyboards such as G213).
+    // Keyboard zone editor for HID++ devices that report lighting zones.
     keyboardZonePanel_ = new QWidget(page);
     auto* kzLayout = new QVBoxLayout(keyboardZonePanel_);
     kzLayout->setContentsMargins(0, 0, 0, 0);
     auto* kzHint = new QLabel(
-        i18n("Each block controls one device-reported lighting zone. "
-             "For G213 these correspond to the five physical RGB regions."),
+        i18n("Each block controls one device-reported lighting zone."),
         keyboardZonePanel_);
     kzHint->setWordWrap(true);
     kzHint->setEnabled(false);
