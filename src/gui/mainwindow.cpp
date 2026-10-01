@@ -799,7 +799,7 @@ void MainWindow::onModeChanged() {
         (m.rainbow && rainbow) ||
         (m.perkey && perKey) ||
         (m.zones && zoned) ||
-        (effectMode && advanced);
+        (effectMode && (advanced || controller_->supportsEffectMode(m.value)));
 
     colorButton_->setEnabled(supported && m.usesColor);
     speedCombo_->setEnabled(supported && m.usesSpeed);
