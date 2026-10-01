@@ -228,6 +228,7 @@ void usageLogitech() {
         "Logitech HID++ 2.0:\n"
         "  krgb-cli logitech info        inspect HID++ features and device capabilities\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
+        "  krgb-cli logitech effects-info dump read-only 0x8070 runtime/NV effect state\n"
         "  krgb-cli logitech layouts     list physical geometries for the connected model\n"
         "  krgb-cli logitech verify-keys GEOMETRY verify physical geometry IDs\n"
         "  krgb-cli logitech verify-controls verify media, controls, status LEDs and logo\n"
@@ -361,7 +362,7 @@ int runCase(const std::vector<std::string>& a) {
 
 int runLogitech(const std::vector<std::string>& a) {
     const std::string sub = a.size() > 1 ? a[1] : std::string();
-    if(sub != "info" && sub != "perkey-info" && sub != "layouts" &&
+    if(sub != "info" && sub != "perkey-info" && sub != "effects-info" && sub != "layouts" &&
        sub != "verify-keys" && sub != "verify-controls" &&
        sub != "key" && sub != "perkey-solid" &&
        sub != "solid" && sub != "zone" && sub != "indicator") {
@@ -458,6 +459,155 @@ int runLogitech(const std::vector<std::string>& a) {
             }
             std::printf("  %-8s %3zu keys  %s\n",
                         geometry.name, geometry.keyCount, geometry.sources);
+        }
+        return 0;
+    }
+
+    if(sub == "effects-info") {
+        if(a.size() != 2) {
+            usageLogitech();
+            return 2;
+        }
+
+        LogitechHIDPP20ColorLedInfo info;
+        if(!dev.getColorLed8070Info(info, &err)) {
+            std::fprintf(stderr, "error: %s\n", err.c_str());
+            return 1;
+        }
+
+        auto effectName = [](std::uint16_t id) -> const char* {
+            switch(id) {
+                case 0x0000: return "Disabled";
+                case 0x0001: return "Fixed";
+                case 0x0002: return "Pulsing/Breathing";
+                case 0x0003: return "Color Cycling";
+                case 0x0004: return "Color Wave";
+                case 0x0005: return "Starlight";
+                case 0x000a: return "Pulsing/Breathing (Waveform)";
+                default: return "Unknown";
+            }
+        };
+
+        auto locationName = [](std::uint16_t location) -> const char* {
+            switch(location) {
+                case 0x0001: return "Primary";
+                case 0x0002: return "Logo";
+                case 0x0003: return "Left Side";
+                case 0x0004: return "Right Side";
+                case 0x0005: return "Combined";
+                default: return "Unknown";
+            }
+        };
+
+        std::printf("0x8070 Color LED Effects\n");
+        std::printf("  zones          : %u\n", static_cast<unsigned>(info.zoneCount));
+        std::printf("  nvCapabilities : 0x%04x\n",
+                    static_cast<unsigned>(info.nvCapabilities));
+        std::printf("  extCapabilities: 0x%04x\n",
+                    static_cast<unsigned>(info.extCapabilities));
+
+        const struct {
+            std::uint16_t bit;
+            const char* name;
+        } nvDefs[] = {
+            {0x0001, "bootUpEffect"},
+            {0x0002, "demo"},
+            {0x0004, "userDemoMode"},
+        };
+
+        for(const auto& def : nvDefs) {
+            if((info.nvCapabilities & def.bit) == 0) {
+                continue;
+            }
+
+            LogitechHIDPP20ColorLedNvConfig cfg;
+            std::string nvErr;
+            if(dev.getColorLed8070NvConfig(def.bit, cfg, &nvErr)) {
+                std::printf("  NV 0x%04x %-12s : state=%u param1=0x%02x param2=0x%02x\n",
+                            static_cast<unsigned>(def.bit), def.name,
+                            static_cast<unsigned>(cfg.state),
+                            static_cast<unsigned>(cfg.param1),
+                            static_cast<unsigned>(cfg.param2));
+            } else {
+                std::printf("  NV 0x%04x %-12s : unavailable (%s)\n",
+                            static_cast<unsigned>(def.bit), def.name,
+                            nvErr.c_str());
+            }
+        }
+
+        for(const auto& zone : info.zones) {
+            std::printf("\nzone %u location=0x%04x (%s) effects=%u persist=0x%02x\n",
+                        static_cast<unsigned>(zone.zoneIndex),
+                        static_cast<unsigned>(zone.location),
+                        locationName(zone.location),
+                        static_cast<unsigned>(zone.effectCount),
+                        static_cast<unsigned>(zone.persistencyCapabilities));
+
+            for(const auto& effect : zone.effects) {
+                std::printf("  slot %u : id=0x%04x %-30s caps=0x%04x period=%ums\n",
+                            static_cast<unsigned>(effect.effectIndex),
+                            static_cast<unsigned>(effect.effectId),
+                            effectName(effect.effectId),
+                            static_cast<unsigned>(effect.capabilities),
+                            static_cast<unsigned>(effect.periodMs));
+            }
+
+            for(std::uint8_t persistence = 0; persistence <= 1; ++persistence) {
+                const char* scope = persistence == 0 ? "RAM" : "EEPROM";
+
+                LogitechHIDPP20ColorLedEffectSettings settings;
+                std::string settingsErr;
+                if(dev.getColorLed8070EffectSettings(
+                       zone.zoneIndex, persistence, settings, &settingsErr)) {
+                    std::printf(
+                        "  %-6s settings : RGB=%3u,%3u,%3u period=%5ums brightness=%3u param=0x%02x\n",
+                        scope,
+                        static_cast<unsigned>(settings.r),
+                        static_cast<unsigned>(settings.g),
+                        static_cast<unsigned>(settings.b),
+                        static_cast<unsigned>(settings.periodMs),
+                        static_cast<unsigned>(settings.brightness),
+                        static_cast<unsigned>(settings.effectParam));
+                } else {
+                    std::printf("  %-6s settings : unavailable (%s)\n",
+                                scope, settingsErr.c_str());
+                }
+
+                if((info.extCapabilities & 0x0001) != 0) {
+                    LogitechHIDPP20ColorLedZoneEffectState state;
+                    std::string stateErr;
+                    if(dev.getColorLed8070ZoneEffect(
+                           zone.zoneIndex, persistence, state, &stateErr)) {
+                        std::uint16_t effectId = 0xffff;
+                        for(const auto& effect : zone.effects) {
+                            if(effect.effectIndex == state.effectIndex) {
+                                effectId = effect.effectId;
+                                break;
+                            }
+                        }
+
+                        if(effectId != 0xffff) {
+                            std::printf("  %-6s effect   : slot=%u id=0x%04x %s params=",
+                                        scope,
+                                        static_cast<unsigned>(state.effectIndex),
+                                        static_cast<unsigned>(effectId),
+                                        effectName(effectId));
+                        } else {
+                            std::printf("  %-6s effect   : slot=%u id=unknown params=",
+                                        scope,
+                                        static_cast<unsigned>(state.effectIndex));
+                        }
+                        for(std::size_t i = 0; i < state.params.size(); ++i) {
+                            std::printf("%s%02x", i == 0 ? "" : " ",
+                                        static_cast<unsigned>(state.params[i]));
+                        }
+                        std::printf("\n");
+                    } else {
+                        std::printf("  %-6s effect   : unavailable (%s)\n",
+                                    scope, stateErr.c_str());
+                    }
+                }
+            }
         }
         return 0;
     }
