@@ -67,13 +67,26 @@ LEDs, so k-rgb collapses RGB input to a single intensity value. The G610 path
 has not yet been verified on physical G610 hardware.
 
 Logitech HID++ discovery is capability-based. k-rgb scans Logitech hidraw
-endpoints, verifies HID++ 2.0, resolves Feature Set `0x0001` through ROOT and
-then enumerates the device's complete Feature Set. Every reported feature ID,
-runtime index, type/flags and version is retained, including features unknown to
-k-rgb. Known lighting features such as `0x8040`, `0x8070`, `0x8071`,
-`0x8080`, and `0x8081` are looked up in that runtime feature table rather
-than individually probed or assigned by USB PID. For `0x8080`, the
-device-reported key-type bitmap/counts/IDs remain authoritative.
+endpoints, resolves Feature Set `0x0001` through ROOT and then enumerates the
+device's complete non-root Feature Set. ROOT itself is recorded explicitly as
+feature `0x0000` at runtime index 0; `FeatureSet.GetFeatureID()` is only
+called for the valid non-root indexes `1..count`. Every reported feature ID,
+runtime index and type/flags is retained, including features unknown to k-rgb.
+Feature versions are taken from the Feature Set only when that Feature Set
+version defines the version byte.
+
+ROOT protocol reporting follows the newer Logitech ROOT semantics:
+`getProtocolVersion()` returns a protocol number and, for protocol 3+, a
+target-software hint. k-rgb therefore does not format values such as
+`protocolNum=4,targetSw=2` as a synthetic `HID++ 4.2` version.
+
+Known lighting features such as `0x8040`, `0x8070`, `0x8071`,
+`0x8080`, and `0x8081` are looked up in the runtime feature table rather
+than individually probed or assigned by USB PID. Features marked by Logitech as
+hidden, engineering, manufacturing-deactivatable, or compliance-deactivatable
+remain visible in diagnostics but are not automatically activated by normal
+capability discovery. For `0x8080`, the device-reported key-type
+bitmap/counts/IDs remain authoritative.
 
 Known PIDs are used only for USB identity, udev permissions, optional geometry
 metadata, and properties or quirks that HID++ does not report. Unknown Logitech
