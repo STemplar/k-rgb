@@ -1742,9 +1742,14 @@ bool LogitechHIDPP20Device::setColorLed8070Effect(
                 params[11] = static_cast<std::uint8_t>(periodMs >> 8);
                 break;
 
-            case 0x0005: // Starlight
+            case 0x0005: // Starlight / LGS "Star Effect"
                 // param1..3 = sky RGB, param4..6 = star RGB.
-                // Use a black sky and the GUI-selected colour for the stars.
+                // Match the G810 LGS PerKeyLightingDefaults resource:
+                //   star/sky/color  = #000019
+                //   star/star/color = selected GUI colour (default #ffff00)
+                params[2] = 0x00;
+                params[3] = 0x00;
+                params[4] = 0x19;
                 params[5] = r;
                 params[6] = g;
                 params[7] = b;
