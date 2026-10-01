@@ -393,11 +393,60 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
     if(!ensureOpen()) {
         return false;
     }
-    if(backend_ == Backend::LogitechHIDPP20) {
-        Q_EMIT error(i18n("Hardware effects are not exposed in the Logitech GUI yet."));
-        return false;
-    }
+
     const auto mode = static_cast<Mode>(modeValue);
+
+    if(backend_ == Backend::LogitechHIDPP20) {
+        if(!supportsEffectMode(modeValue)) {
+            Q_EMIT error(i18n("This hardware effect is not available for the connected Logitech keyboard."));
+            return false;
+        }
+
+        std::uint16_t effectId = 0;
+        switch(mode) {
+            case Mode::Breathing:
+                effectId = 0x000a;
+                break;
+            case Mode::Spectrum:
+                effectId = 0x0003;
+                break;
+            default:
+                Q_EMIT error(i18n("This hardware effect is not implemented for Logitech."));
+                return false;
+        }
+
+        std::uint16_t periodMs = 5000;
+        switch(static_cast<Speed>(speedValue)) {
+            case Speed::Slowest: periodMs = 10000; break;
+            case Speed::Normal:  periodMs = 5000;  break;
+            case Speed::Fastest: periodMs = 2000;  break;
+        }
+
+        const QColor c = scaled(color, brightnessPct);
+        std::uint8_t wireDirection = 1;
+        switch(static_cast<Direction>(directionValue)) {
+            case Direction::Right: wireDirection = 1; break;
+            case Direction::Down:  wireDirection = 2; break;
+            case Direction::Left:  wireDirection = 6; break;
+            case Direction::Up:    wireDirection = 7; break;
+        }
+
+        std::string err;
+        if(!logitechDevice_.setColorLed8070Effect(
+               effectId,
+               static_cast<std::uint8_t>(c.red()),
+               static_cast<std::uint8_t>(c.green()),
+               static_cast<std::uint8_t>(c.blue()),
+               periodMs,
+               100,
+               wireDirection,
+               &err)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
+    }
+
     ColorMode cm = ColorMode::Single;
     if(mode == Mode::Spectrum || mode == Mode::RainbowWave) {
         cm = ColorMode::Rainbow;
