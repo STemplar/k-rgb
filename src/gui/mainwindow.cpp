@@ -378,10 +378,16 @@ QWidget* MainWindow::buildKeyboardPage() {
     auto* buttons = new QHBoxLayout();
     offButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("system-shutdown")),
                                  i18n("Turn Off"), page);
+    auto* quitButton = new QPushButton(
+        QIcon::fromTheme(QStringLiteral("application-exit")),
+        i18n("Quit k-rgb"), page);
+    quitButton->setToolTip(
+        i18n("Exit k-rgb completely instead of hiding it in the system tray."));
     applyButton_ = new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok-apply")),
                                    i18n("Apply"), page);
     applyButton_->setDefault(true);
     buttons->addWidget(offButton_);
+    buttons->addWidget(quitButton);
     buttons->addStretch();
     buttons->addWidget(applyButton_);
     v->addLayout(buttons);
@@ -390,6 +396,7 @@ QWidget* MainWindow::buildKeyboardPage() {
     connect(brightnessSlider_, &QSlider::valueChanged, this, &MainWindow::onBrightnessChanged);
     connect(applyButton_, &QPushButton::clicked, this, &MainWindow::onApply);
     connect(offButton_, &QPushButton::clicked, this, &MainWindow::onOff);
+    connect(quitButton, &QPushButton::clicked, qApp, &QApplication::quit);
     connect(selectAllBtn, &QPushButton::clicked, keyboardWidget_, &KeyboardWidget::selectAll);
     connect(paintBtn, &QPushButton::clicked, this, &MainWindow::onPaintSelection);
     connect(offSelBtn, &QPushButton::clicked, this, &MainWindow::onOffSelection);
