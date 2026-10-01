@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/logitech_known_devices.h"
+#include "core/logitech_hidpp20_feature_catalog.h"
 
 namespace krgb {
 
@@ -92,6 +93,85 @@ struct LogitechUsbIdentity {
     std::string hidName;
 };
 
+struct LogitechHIDPP20KeyboardLayoutInfo {
+    std::uint16_t featureId = 0;
+    std::uint8_t countryCode = 0;
+};
+
+struct LogitechHIDPP20DeviceTypeInfo {
+    std::uint8_t deviceType = 0xff;
+    std::string name;
+};
+
+struct LogitechHIDPP20BrightnessInfo {
+    std::uint16_t minimum = 0;
+    std::uint16_t maximum = 0;
+    std::uint16_t steps = 0;
+    std::uint8_t capabilities = 0;
+    std::uint16_t current = 0;
+    bool hasCurrent = false;
+};
+
+struct LogitechHIDPP20DisableKeysInfo {
+    std::uint8_t disableableMask = 0;
+    std::uint8_t disabledMask = 0;
+    bool hasDisabledMask = false;
+    std::uint8_t maxDisabledUsages = 0;
+};
+
+struct LogitechHIDPP20ControlInfo {
+    std::uint16_t controlId = 0;
+    std::uint16_t taskId = 0;
+    std::uint16_t flags = 0;
+    std::uint8_t position = 0;
+    std::uint8_t group = 0;
+    std::uint8_t groupMask = 0;
+};
+
+struct LogitechHIDPP20ControlsInfo {
+    std::uint16_t featureId = 0;
+    std::vector<LogitechHIDPP20ControlInfo> controls;
+};
+
+struct LogitechHIDPP20ColorLedEffectInfo {
+    std::uint8_t zoneIndex = 0;
+    std::uint8_t effectIndex = 0;
+    std::uint16_t effectId = 0;
+    std::uint16_t capabilities = 0;
+    std::uint16_t periodMs = 0;
+};
+
+struct LogitechHIDPP20ColorLedZoneInfo {
+    std::uint8_t zoneIndex = 0;
+    std::uint16_t location = 0;
+    std::uint8_t effectCount = 0;
+    std::uint8_t persistencyCapabilities = 0;
+    std::vector<LogitechHIDPP20ColorLedEffectInfo> effects;
+};
+
+struct LogitechHIDPP20ColorLedInfo {
+    std::uint8_t zoneCount = 0;
+    std::uint16_t nvCapabilities = 0;
+    std::uint16_t extCapabilities = 0;
+    std::vector<LogitechHIDPP20ColorLedZoneInfo> zones;
+};
+
+struct LogitechHIDPP20PerKey8081Info {
+    std::vector<std::uint8_t> zoneIds;
+};
+
+struct LogitechHIDPP20ReportRateInfo {
+    std::uint16_t supportedMask = 0;
+    std::uint8_t current = 0;
+    bool hasCurrent = false;
+};
+
+struct LogitechHIDPP20ModeStatusInfo {
+    std::uint8_t status0 = 0;
+    std::uint8_t status1 = 0;
+    std::uint16_t capabilities = 0;
+};
+
 struct LogitechHIDPP20LightingFeatures {
     LogitechHIDPP20FeatureInfo brightness8040;
     LogitechHIDPP20FeatureInfo colorLedEffects8070;
@@ -121,11 +201,25 @@ public:
     static constexpr std::uint16_t kFeatureRoot = 0x0000;
     static constexpr std::uint16_t kFeatureSet = 0x0001;
     static constexpr std::uint16_t kFeatureDeviceInformation = 0x0003;
+    static constexpr std::uint16_t kFeatureDeviceTypeAndName = 0x0005;
+    static constexpr std::uint16_t kFeatureReprogControls = 0x1b00;
+    static constexpr std::uint16_t kFeatureReprogControls5 = 0x1b04;
+    static constexpr std::uint16_t kFeatureKeyboardLayout = 0x4520;
+    static constexpr std::uint16_t kFeatureDisableKeys = 0x4521;
+    static constexpr std::uint16_t kFeatureDisableKeysByUsage = 0x4522;
+    static constexpr std::uint16_t kFeatureKeyboardInternationalLayouts = 0x4540;
+    static constexpr std::uint16_t kFeatureGamingGKeys = 0x8010;
+    static constexpr std::uint16_t kFeatureGamingMKeys = 0x8020;
+    static constexpr std::uint16_t kFeatureMacroRecord = 0x8030;
     static constexpr std::uint16_t kFeatureBrightnessControl = 0x8040;
     static constexpr std::uint16_t kFeatureColorLedEffects = 0x8070;
     static constexpr std::uint16_t kFeatureRgbEffects = 0x8071;
     static constexpr std::uint16_t kFeaturePerKeyLighting = 0x8080;
     static constexpr std::uint16_t kFeaturePerKeyLighting2 = 0x8081;
+    static constexpr std::uint16_t kFeatureAdjustableReportRate = 0x8060;
+    static constexpr std::uint16_t kFeatureExtendedAdjustableReportRate = 0x8061;
+    static constexpr std::uint16_t kFeatureModeStatus = 0x8090;
+    static constexpr std::uint16_t kFeatureOnboardProfiles = 0x8100;
 
     LogitechHIDPP20Device() = default;
     ~LogitechHIDPP20Device();
@@ -179,6 +273,27 @@ public:
     // failure. A successful call with info.index == 0 means unsupported.
     bool getFeature(std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
                     std::string* err = nullptr);
+
+    // Read-only capability queries. These only call documented getter
+    // functions for features that were reported by the runtime Feature Set.
+    bool getDeviceTypeAndName(LogitechHIDPP20DeviceTypeInfo& info,
+                              std::string* err = nullptr);
+    bool getKeyboardLayout(LogitechHIDPP20KeyboardLayoutInfo& info,
+                           std::string* err = nullptr);
+    bool getBrightnessInfo(LogitechHIDPP20BrightnessInfo& info,
+                           std::string* err = nullptr);
+    bool getDisableKeysInfo(LogitechHIDPP20DisableKeysInfo& info,
+                            std::string* err = nullptr);
+    bool getReprogrammableControls(LogitechHIDPP20ControlsInfo& info,
+                                   std::string* err = nullptr);
+    bool getColorLed8070Info(LogitechHIDPP20ColorLedInfo& info,
+                             std::string* err = nullptr);
+    bool getPerKey8081Info(LogitechHIDPP20PerKey8081Info& info,
+                           std::string* err = nullptr);
+    bool getReportRateInfo(LogitechHIDPP20ReportRateInfo& info,
+                           std::string* err = nullptr);
+    bool getModeStatusInfo(LogitechHIDPP20ModeStatusInfo& info,
+                           std::string* err = nullptr);
 
     // HID++ 2.0 feature 0x0003 (Device Information). Reads all reported
     // firmware/hardware entities such as main firmware and bootloader.
