@@ -721,6 +721,104 @@ bool LogitechHIDPP20Device::getPerKey8081Info(
     return true;
 }
 
+bool LogitechHIDPP20Device::getRgbEffects8071Info(
+    LogitechHIDPP20RgbEffectsInfo& info, std::string* err) {
+
+    info = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureRgbEffects, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8071 (RGB Effects) is not supported";
+        return false;
+    }
+
+    const std::uint8_t deviceParams[3] = {0xff, 0xff, 0x00};
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x00, deviceParams, sizeof(deviceParams),
+                       raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 12) {
+        if(err) *err = "HID++ 0x8071 GetInfo(device) returned a short response";
+        return false;
+    }
+
+    info.clusterCount = raw[6];
+    info.nvCapabilities =
+        (static_cast<std::uint16_t>(raw[7]) << 8) | raw[8];
+    info.extCapabilities =
+        (static_cast<std::uint16_t>(raw[9]) << 8) | raw[10];
+    info.multiClusterEffectCount = raw[11];
+    info.clusters.reserve(info.clusterCount);
+
+    for(std::uint16_t cidx = 0; cidx < info.clusterCount; ++cidx) {
+        const std::uint8_t clusterParams[3] = {
+            static_cast<std::uint8_t>(cidx), 0xff, 0x00
+        };
+        RawReport clusterRaw{};
+        std::size_t clusterSize = 0;
+        if(!requestLongRaw(feature.index, 0x00,
+                           clusterParams, sizeof(clusterParams),
+                           clusterRaw, clusterSize, err)) {
+            return false;
+        }
+        if(clusterSize < 12) {
+            if(err) *err = "HID++ 0x8071 GetInfo(cluster) returned a short response";
+            return false;
+        }
+
+        LogitechHIDPP20RgbClusterInfo cluster;
+        cluster.clusterIndex = clusterRaw[4];
+        cluster.location =
+            (static_cast<std::uint16_t>(clusterRaw[6]) << 8) | clusterRaw[7];
+        cluster.effectCount = clusterRaw[8];
+        cluster.displayPersistencyCapabilities = clusterRaw[9];
+        cluster.effectPersistency = clusterRaw[10] != 0;
+        cluster.multiLedPattern = clusterRaw[11] != 0;
+        cluster.effects.reserve(cluster.effectCount);
+
+        for(std::uint16_t e = 0; e < cluster.effectCount; ++e) {
+            const std::uint8_t effectParams[3] = {
+                static_cast<std::uint8_t>(cidx),
+                static_cast<std::uint8_t>(e),
+                0x00
+            };
+            RawReport effectRaw{};
+            std::size_t effectSize = 0;
+            if(!requestLongRaw(feature.index, 0x00,
+                               effectParams, sizeof(effectParams),
+                               effectRaw, effectSize, err)) {
+                return false;
+            }
+            if(effectSize < 12) {
+                if(err) *err = "HID++ 0x8071 GetInfo(effect) returned a short response";
+                return false;
+            }
+
+            cluster.effects.push_back({
+                effectRaw[4],
+                effectRaw[5],
+                static_cast<std::uint16_t>(
+                    (static_cast<std::uint16_t>(effectRaw[6]) << 8) |
+                     effectRaw[7]),
+                static_cast<std::uint16_t>(
+                    (static_cast<std::uint16_t>(effectRaw[8]) << 8) |
+                     effectRaw[9]),
+                static_cast<std::uint16_t>(
+                    (static_cast<std::uint16_t>(effectRaw[10]) << 8) |
+                     effectRaw[11])
+            });
+        }
+
+        info.clusters.push_back(std::move(cluster));
+    }
+
+    return true;
+}
+
 bool LogitechHIDPP20Device::getReportRateInfo(
     LogitechHIDPP20ReportRateInfo& info, std::string* err) {
 
@@ -852,10 +950,21 @@ bool LogitechHIDPP20Device::probeKeyboard(std::string* err) {
         }
     }
 
-    // For feature families that do not currently expose a parsed keyboard
-    // topology, only accept USB identities already known to be keyboards.
-    // This prevents a Logitech mouse/headset with e.g. 0x8070 from being
-    // misclassified while keeping protocol selection capability-driven.
+    // Prefer device-reported identity when 0x0005 is available. DeviceType 0
+    // is a keyboard, so an unknown Logitech PID can still be accepted without a
+    // model table entry.
+    if(capabilities.findFeature(kFeatureDeviceTypeAndName) != nullptr) {
+        LogitechHIDPP20DeviceTypeInfo typeInfo;
+        std::string typeError;
+        if(getDeviceTypeAndName(typeInfo, &typeError) &&
+           typeInfo.deviceType == 0x00) {
+            return true;
+        }
+    }
+
+    // Older endpoints may not expose 0x0005. For feature families that do not
+    // provide a parsed keyboard topology, retain the known-PID fallback to avoid
+    // treating an RGB mouse/headset as a keyboard.
     if(logitechKnownDeviceForProductId(usbIdentity_.productId) != nullptr) {
         return true;
     }
