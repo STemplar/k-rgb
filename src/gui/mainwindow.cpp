@@ -496,7 +496,7 @@ void MainWindow::setupTray() {
     tray_->setTitle(i18n("k-rgb"));
     tray_->setIconByName(QStringLiteral("input-keyboard"));
     tray_->setToolTip(QStringLiteral("input-keyboard"), i18n("k-rgb"),
-                      i18n("Alienware AW410K lighting"));
+                      i18n("RGB keyboard lighting"));
     tray_->setCategory(KStatusNotifierItem::ApplicationStatus);
     tray_->setStatus(KStatusNotifierItem::Active);
     tray_->setStandardActionsEnabled(false);
@@ -1024,6 +1024,10 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         statusLabel_->setText(i18n("<span style='color:#27ae60'>●</span> %1", model));
         statusLabel_->setToolTip(i18n("Connected to %1 (%2)", model,
                                       path.isEmpty() ? i18n("unknown") : path));
+        if(tray_) {
+            tray_->setToolTip(QStringLiteral("input-keyboard"), i18n("k-rgb"),
+                              i18n("%1 lighting", model));
+        }
         keyboardWidget_->setLayoutKind(
             controller_->usesLogitechG810Iso105VisualLayout()
                 ? KeyboardWidget::LayoutKind::LogitechG810Iso105
@@ -1071,6 +1075,10 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         statusLabel_->setToolTip(
             i18n("No supported keyboard found — check it's plugged in "
                  "and the udev rule is installed."));
+        if(tray_) {
+            tray_->setToolTip(QStringLiteral("input-keyboard"), i18n("k-rgb"),
+                              i18n("No supported keyboard connected"));
+        }
     }
 
     modeCombo_->setEnabled(connected);
