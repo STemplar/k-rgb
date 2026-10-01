@@ -18,10 +18,33 @@
 
 namespace krgb {
 
+inline constexpr std::uint8_t kHidppFeatureFlagObsolete = 0x80;
+inline constexpr std::uint8_t kHidppFeatureFlagHidden = 0x40;
+inline constexpr std::uint8_t kHidppFeatureFlagEngineering = 0x20;
+inline constexpr std::uint8_t kHidppFeatureFlagManufacturingDeactivatable = 0x10;
+inline constexpr std::uint8_t kHidppFeatureFlagComplianceDeactivatable = 0x08;
+
 struct LogitechHIDPP20FeatureInfo {
     std::uint8_t index = 0;
     std::uint8_t type = 0;
     std::uint8_t version = 0;
+    bool versionKnown = false;
+
+    bool isObsolete() const { return (type & kHidppFeatureFlagObsolete) != 0; }
+    bool isHidden() const { return (type & kHidppFeatureFlagHidden) != 0; }
+    bool isEngineering() const { return (type & kHidppFeatureFlagEngineering) != 0; }
+    bool isManufacturingDeactivatable() const {
+        return (type & kHidppFeatureFlagManufacturingDeactivatable) != 0;
+    }
+    bool isComplianceDeactivatable() const {
+        return (type & kHidppFeatureFlagComplianceDeactivatable) != 0;
+    }
+    bool isUsableByEndUserSoftware() const {
+        return (type & (kHidppFeatureFlagHidden |
+                        kHidppFeatureFlagEngineering |
+                        kHidppFeatureFlagManufacturingDeactivatable |
+                        kHidppFeatureFlagComplianceDeactivatable)) == 0;
+    }
 };
 
 struct LogitechHIDPP20Feature {
@@ -29,14 +52,52 @@ struct LogitechHIDPP20Feature {
     std::uint8_t index = 0;
     std::uint8_t type = 0;
     std::uint8_t version = 0;
+    bool versionKnown = false;
+
+    bool isObsolete() const { return (type & kHidppFeatureFlagObsolete) != 0; }
+    bool isHidden() const { return (type & kHidppFeatureFlagHidden) != 0; }
+    bool isEngineering() const { return (type & kHidppFeatureFlagEngineering) != 0; }
+    bool isManufacturingDeactivatable() const {
+        return (type & kHidppFeatureFlagManufacturingDeactivatable) != 0;
+    }
+    bool isComplianceDeactivatable() const {
+        return (type & kHidppFeatureFlagComplianceDeactivatable) != 0;
+    }
+    bool isUsableByEndUserSoftware() const {
+        return (type & (kHidppFeatureFlagHidden |
+                        kHidppFeatureFlagEngineering |
+                        kHidppFeatureFlagManufacturingDeactivatable |
+                        kHidppFeatureFlagComplianceDeactivatable)) == 0;
+    }
+};
+
+struct LogitechHIDPP20ProtocolInfo {
+    std::uint8_t protocolNumber = 0;
+    std::uint8_t targetSoftware = 0;
+    std::uint8_t pingData = 0;
+
+    bool hasTargetSoftwareHint() const { return protocolNumber >= 3; }
 };
 
 struct LogitechHIDPP20Capabilities {
-    std::uint8_t protocolMajor = 0;
-    std::uint8_t protocolMinor = 0;
+    LogitechHIDPP20ProtocolInfo protocol;
     std::vector<LogitechHIDPP20Feature> features;
 
+    // Normal capability lookup excludes features that Logitech marks hidden,
+    // engineering or deactivatable for manufacturing/compliance use.
     const LogitechHIDPP20Feature* findFeature(std::uint16_t featureId) const {
+        for(const auto& feature : features) {
+            if(feature.featureId == featureId &&
+               feature.isUsableByEndUserSoftware()) {
+                return &feature;
+            }
+        }
+        return nullptr;
+    }
+
+    // Diagnostics may still need to display every feature the device reports.
+    const LogitechHIDPP20Feature* findReportedFeature(
+        std::uint16_t featureId) const {
         for(const auto& feature : features) {
             if(feature.featureId == featureId) {
                 return &feature;
@@ -290,9 +351,16 @@ public:
     bool getLightingFeatures(LogitechHIDPP20LightingFeatures& features,
                              std::string* err = nullptr);
 
-    // ROOT.getProtocolVersion(). HID++ 2.0 devices return their protocol
-    // major/minor version and echo the ping byte.
-    bool getProtocolVersion(std::uint8_t& major, std::uint8_t& minor,
+    // ROOT.getProtocolVersion(). Modern ROOT v2 reports a protocol number,
+    // a target-software hint and the echoed ping byte. In particular the
+    // second byte is not a protocol minor version when protocolNumber >= 3.
+    bool getProtocolInfo(LogitechHIDPP20ProtocolInfo& info,
+                         std::string* err = nullptr);
+
+    // Compatibility wrapper for callers that still expect two output bytes.
+    // The outputs are protocolNumber and targetSoftware, not major/minor.
+    bool getProtocolVersion(std::uint8_t& protocolNumber,
+                            std::uint8_t& targetSoftware,
                             std::string* err = nullptr);
 
     // ROOT.getFeature(featureId). A false return means transport/protocol
