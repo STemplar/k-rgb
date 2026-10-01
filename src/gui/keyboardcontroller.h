@@ -44,7 +44,10 @@ public:
         }
         if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
             const auto mode = static_cast<krgb::Mode>(modeValue);
-            return mode == krgb::Mode::Breathing || mode == krgb::Mode::Spectrum;
+            return mode == krgb::Mode::Breathing ||
+                   mode == krgb::Mode::Spectrum ||
+                   mode == krgb::Mode::RainbowWave ||
+                   mode == krgb::Mode::Scanner;
         }
         return false;
     }
