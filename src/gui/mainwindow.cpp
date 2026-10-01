@@ -389,6 +389,58 @@ QWidget* MainWindow::buildKeyboardPage() {
     v->addLayout(buttons);
 
     connect(modeCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onModeChanged);
+    connect(modeCombo_, &QComboBox::activated, this, [this](int index) {
+        if(!controller_->usesLogitechG810Iso105VisualLayout() ||
+           index < 0 || index >= modes_.size()) {
+            return;
+        }
+
+        // Apply the original G810 LGS defaults only when the user explicitly
+        // chooses a mode. Programmatic profile loading uses setCurrentIndex()
+        // and therefore preserves the profile's saved values.
+        const auto mode = static_cast<Mode>(modes_.at(index).value);
+        const bool wasLoading = loading_;
+        loading_ = true;
+
+        auto selectSpeed = [this](Speed speed) {
+            const int i = speedCombo_->findData(static_cast<int>(speed));
+            if(i >= 0) {
+                speedCombo_->setCurrentIndex(i);
+            }
+        };
+        auto selectDirection = [this](Direction direction) {
+            const int i = directionCombo_->findData(static_cast<int>(direction));
+            if(i >= 0) {
+                directionCombo_->setCurrentIndex(i);
+            }
+        };
+
+        if(modes_.at(index).solid) {
+            colorButton_->setColor(QColor(QStringLiteral("#00dcff")));
+        } else {
+            switch(mode) {
+                case Mode::Breathing:
+                    colorButton_->setColor(QColor(QStringLiteral("#00dcff")));
+                    selectSpeed(Speed::Normal);   // LGS breathing/speed = 5000 ms
+                    break;
+                case Mode::Spectrum:
+                    selectSpeed(Speed::Slowest);  // LGS cycle/speed = 10000 ms
+                    break;
+                case Mode::RainbowWave:
+                    selectSpeed(Speed::Fastest);  // LGS wave/speed = 2000 ms
+                    selectDirection(Direction::Right); // LGS wave/direction = 1
+                    break;
+                case Mode::Scanner:
+                    colorButton_->setColor(QColor(QStringLiteral("#ffff00")));
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        loading_ = wasLoading;
+        onModeChanged();
+    });
     connect(brightnessSlider_, &QSlider::valueChanged, this, &MainWindow::onBrightnessChanged);
     connect(applyButton_, &QPushButton::clicked, this, &MainWindow::onApply);
     connect(offButton_, &QPushButton::clicked, this, &MainWindow::onOff);
@@ -824,14 +876,19 @@ void MainWindow::onModeChanged() {
     bool usesSpeed = m.usesSpeed;
     bool usesDirection = m.usesDirection;
 
-    // G810 0x0005 Starlight exposes two RGB triplets but no period/direction
-    // parameter in the documented x8070 definition. The current mapping uses
-    // the selected GUI colour for the stars against a black sky.
+    // LGS calls firmware effect 0x0005 "Star Effect".  The G810 resource
+    // provides star/sky colours plus software-oriented count/rate defaults,
+    // while x8070 itself only accepts the two RGB triplets.  Expose the star
+    // colour here; the protocol layer uses the LGS sky default (#000019).
     if(controller_->usesLogitechG810Iso105VisualLayout() &&
        static_cast<Mode>(m.value) == Mode::Scanner) {
         usesColor = true;
         usesSpeed = false;
         usesDirection = false;
+        colorButton_->setToolTip(
+            i18n("Star colour. The G810 LGS default sky colour is #000019."));
+    } else {
+        colorButton_->setToolTip(QString());
     }
 
     colorButton_->setEnabled(supported && usesColor);
@@ -1037,16 +1094,17 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     const bool g810Iso105 =
         connected && controller_->usesLogitechG810Iso105VisualLayout();
 
-    // The shared mode table uses the historical Alienware names. Present the
-    // protocol-native Logitech 0x8070 names on the G810 instead, and mark the
-    // newly exposed mappings experimental until their exact LGS presets have
-    // been captured/verified.
+    // The shared mode table uses historical Alienware names.  For the G810,
+    // present the names used by Logitech Gaming Software's
+    // PerKeyLightingDefaults resource.
     for(int i = 0; i < modes_.size(); ++i) {
         const auto mode = static_cast<Mode>(modes_.at(i).value);
-        if(g810Iso105 && mode == Mode::RainbowWave) {
-            modeCombo_->setItemText(i, i18n("Color Wave (experimental)"));
+        if(g810Iso105 && mode == Mode::Spectrum) {
+            modeCombo_->setItemText(i, i18n("Color Cycle"));
+        } else if(g810Iso105 && mode == Mode::RainbowWave) {
+            modeCombo_->setItemText(i, i18n("Color Wave"));
         } else if(g810Iso105 && mode == Mode::Scanner) {
-            modeCombo_->setItemText(i, i18n("Starlight (experimental)"));
+            modeCombo_->setItemText(i, i18n("Star Effect"));
         } else {
             modeCombo_->setItemText(i, modes_.at(i).name);
         }
