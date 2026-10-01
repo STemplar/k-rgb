@@ -1551,6 +1551,104 @@ bool LogitechHIDPP20Device::setColorLed8070Zones(
     return true;
 }
 
+bool LogitechHIDPP20Device::setColorLed8070Effect(
+    std::uint16_t effectId,
+    std::uint8_t r, std::uint8_t g, std::uint8_t b,
+    std::uint16_t periodMs,
+    std::uint8_t intensity,
+    std::uint8_t direction,
+    std::string* err) {
+
+    LogitechHIDPP20ColorLedInfo info;
+    if(!getColorLed8070Info(info, err)) {
+        return false;
+    }
+
+    LogitechHIDPP20FeatureInfo fx;
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, fx, err)) {
+        return false;
+    }
+    if(fx.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        }
+        return false;
+    }
+
+    normalizeLightingColor(r, g, b);
+    intensity = static_cast<std::uint8_t>(std::min<unsigned>(intensity, 100u));
+
+    for(const auto& zone : info.zones) {
+        const LogitechHIDPP20ColorLedEffectInfo* chosen = nullptr;
+        for(const auto& effect : zone.effects) {
+            if(effect.effectId == effectId) {
+                chosen = &effect;
+                break;
+            }
+        }
+        if(!chosen) {
+            if(err) {
+                char buffer[96]{};
+                std::snprintf(buffer, sizeof(buffer),
+                              "HID++ 0x8070 zone %u does not advertise effect 0x%04x",
+                              static_cast<unsigned>(zone.zoneIndex),
+                              static_cast<unsigned>(effectId));
+                *err = buffer;
+            }
+            return false;
+        }
+
+        // x8070 SetZoneEffect:
+        // zoneIndex, zoneEffectIndex, param1..param10, persistence.
+        std::uint8_t params[13]{};
+        params[0] = zone.zoneIndex;
+        params[1] = chosen->effectIndex;
+
+        switch(effectId) {
+            case 0x000a: // Pulsing / Breathing (waveform)
+                params[2] = r;
+                params[3] = g;
+                params[4] = b;
+                params[5] = static_cast<std::uint8_t>(periodMs >> 8);
+                params[6] = static_cast<std::uint8_t>(periodMs & 0xff);
+                params[7] = 0x00; // device-default waveform
+                params[8] = intensity;
+                break;
+
+            case 0x0003: // Color Cycling / Spectrum
+                params[7] = static_cast<std::uint8_t>(periodMs >> 8);
+                params[8] = static_cast<std::uint8_t>(periodMs & 0xff);
+                params[9] = intensity;
+                break;
+
+            case 0x0004: // Color Wave
+                params[8] = static_cast<std::uint8_t>(periodMs & 0xff);
+                params[9] = direction;
+                params[10] = intensity == 0 ? 1 : intensity;
+                params[11] = static_cast<std::uint8_t>(periodMs >> 8);
+                break;
+
+            default:
+                if(err) {
+                    char buffer[96]{};
+                    std::snprintf(buffer, sizeof(buffer),
+                                  "HID++ 0x8070 effect 0x%04x is not implemented",
+                                  static_cast<unsigned>(effectId));
+                    *err = buffer;
+                }
+                return false;
+        }
+
+        params[12] = 0x00; // volatile/RAM only
+        LongReport response{};
+        if(!requestLong(fx.index, 0x03, params, sizeof(params), response, err)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool LogitechHIDPP20Device::setSolid(
     std::uint8_t r, std::uint8_t g, std::uint8_t b, std::string* err) {
 
