@@ -9,7 +9,7 @@
 #include "core/logitech_g810_iso105_visual.h"
 
 #include <QActionGroup>
-#include <QAbstractItemView>
+#include <QListView>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -1210,7 +1210,9 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
 
         const bool hideForG810 =
             g810Iso105 && (mode == Mode::Pulse || mode == Mode::SingleWave);
-        modeCombo_->view()->setRowHidden(i, hideForG810);
+        if(auto* listView = qobject_cast<QListView*>(modeCombo_->view())) {
+            listView->setRowHidden(i, hideForG810);
+        }
     }
 
     if(connected) {
