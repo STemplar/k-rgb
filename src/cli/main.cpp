@@ -216,7 +216,7 @@ void usageCase() {
 void usageLogitech() {
     std::printf(
         "Logitech HID++ 2.0:\n"
-        "  krgb-cli logitech info        probe G610/G810 HID++ and lighting features\n"
+        "  krgb-cli logitech info        inspect HID++ features and device capabilities\n"
         "  krgb-cli logitech perkey-info dump read-only 0x8080 key types/IDs/colors\n"
         "  krgb-cli logitech layouts     list physical geometries for the connected model\n"
         "  krgb-cli logitech verify-keys GEOMETRY verify physical geometry IDs\n"
