@@ -9,6 +9,7 @@
 #include "core/logitech_g810_iso105_visual.h"
 
 #include <QActionGroup>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -1192,9 +1193,11 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
 
     // The shared mode table uses historical Alienware names.  For the G810,
     // present the names used by Logitech Gaming Software's
-    // PerKeyLightingDefaults resource.
+    // PerKeyLightingDefaults resource and hide modes that this keyboard does
+    // not advertise through HID++ 0x8070.
     for(int i = 0; i < modes_.size(); ++i) {
         const auto mode = static_cast<Mode>(modes_.at(i).value);
+
         if(g810Iso105 && mode == Mode::Spectrum) {
             modeCombo_->setItemText(i, i18n("Color Cycle"));
         } else if(g810Iso105 && mode == Mode::RainbowWave) {
@@ -1204,6 +1207,10 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         } else {
             modeCombo_->setItemText(i, modes_.at(i).name);
         }
+
+        const bool hideForG810 =
+            g810Iso105 && (mode == Mode::Pulse || mode == Mode::SingleWave);
+        modeCombo_->view()->setRowHidden(i, hideForG810);
     }
 
     if(connected) {
