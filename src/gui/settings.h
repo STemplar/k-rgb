@@ -23,6 +23,9 @@ struct LightingSettings {
     QColor color      = QColor(0, 170, 255);
     int    speed      = static_cast<int>(krgb::Speed::Normal);
     int    direction  = static_cast<int>(krgb::Direction::Left);
+    // Exact firmware effect period for devices such as the G810.  Zero keeps
+    // compatibility with older profiles and derives the period from speed.
+    int    effectPeriodMs = 0;
     int    brightness = 100;
 
     // Per-key colours, keyed by key name (see keymap.h). Used when kind == PerKey.
