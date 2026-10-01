@@ -162,6 +162,136 @@ std::string LogitechHIDPP20Device::displayName() const {
     return fallback;
 }
 
+bool LogitechHIDPP20Device::ensureFeatureSet(std::string* err) {
+    if(featureSetEnumerated_) {
+        return true;
+    }
+
+    discoveredFeatures_.clear();
+
+    // Bootstrap through ROOT once: Feature Set itself is feature 0x0001.
+    LogitechHIDPP20FeatureInfo featureSet;
+    if(!getFeature(kFeatureSet, featureSet, err)) {
+        return false;
+    }
+    if(featureSet.index == 0) {
+        if(err) {
+            *err = "HID++ feature 0x0001 (Feature Set) is not supported";
+        }
+        return false;
+    }
+
+    // FeatureSet.GetCount (function 0). In standard HID++ 2.0 this count
+    // excludes ROOT, so valid runtime feature indexes are 0..count.
+    RawReport countRaw{};
+    std::size_t countRawSize = 0;
+    if(!requestLongRaw(featureSet.index, 0x00, nullptr, 0,
+                       countRaw, countRawSize, err)) {
+        return false;
+    }
+    if(countRawSize < 5) {
+        if(err) {
+            *err = "HID++ Feature Set GetCount returned a short response";
+        }
+        return false;
+    }
+
+    const std::uint16_t featureCount =
+        static_cast<std::uint16_t>(countRaw[4]) + 1u;
+    discoveredFeatures_.reserve(featureCount);
+
+    for(std::uint16_t index = 0; index < featureCount; ++index) {
+        const std::uint8_t queryIndex = static_cast<std::uint8_t>(index);
+
+        RawReport featureRaw{};
+        std::size_t featureRawSize = 0;
+        if(!requestLongRaw(featureSet.index, 0x01,
+                           &queryIndex, 1,
+                           featureRaw, featureRawSize, err)) {
+            if(err && !err->empty()) {
+                *err = "HID++ Feature Set GetFeatureID index " +
+                       std::to_string(index) + ": " + *err;
+            }
+            discoveredFeatures_.clear();
+            return false;
+        }
+        if(featureRawSize < 7) {
+            if(err) {
+                *err = "HID++ Feature Set GetFeatureID returned a short response";
+            }
+            discoveredFeatures_.clear();
+            return false;
+        }
+
+        LogitechHIDPP20Feature feature;
+        feature.featureId =
+            (static_cast<std::uint16_t>(featureRaw[4]) << 8) |
+             static_cast<std::uint16_t>(featureRaw[5]);
+        feature.index = static_cast<std::uint8_t>(index);
+        feature.type = featureRaw[6];
+        // Feature-set implementations that return the optional fourth byte
+        // expose the feature version here. Older/short replies leave it zero.
+        feature.version = featureRawSize > 7 ? featureRaw[7] : 0;
+        discoveredFeatures_.push_back(feature);
+    }
+
+    featureSetEnumerated_ = true;
+    return true;
+}
+
+bool LogitechHIDPP20Device::enumerateFeatures(
+    std::vector<LogitechHIDPP20Feature>& features, std::string* err) {
+
+    features.clear();
+    if(!ensureFeatureSet(err)) {
+        return false;
+    }
+    features = discoveredFeatures_;
+    return true;
+}
+
+bool LogitechHIDPP20Device::getCapabilities(
+    LogitechHIDPP20Capabilities& capabilities, std::string* err) {
+
+    capabilities = {};
+
+    if(!getProtocolVersion(capabilities.protocolMajor,
+                           capabilities.protocolMinor, err)) {
+        return false;
+    }
+    if(capabilities.protocolMajor < 2) {
+        if(err) {
+            *err = "device is not HID++ 2.0";
+        }
+        return false;
+    }
+
+    return enumerateFeatures(capabilities.features, err);
+}
+
+bool LogitechHIDPP20Device::getDiscoveredFeature(
+    std::uint16_t featureId, LogitechHIDPP20FeatureInfo& info,
+    std::string* err) {
+
+    info = {};
+    if(!ensureFeatureSet(err)) {
+        return false;
+    }
+
+    for(const auto& feature : discoveredFeatures_) {
+        if(feature.featureId == featureId) {
+            info.index = feature.index;
+            info.type = feature.type;
+            info.version = feature.version;
+            return true;
+        }
+    }
+
+    // Unsupported is not a transport failure; preserve ROOT.getFeature()
+    // semantics by returning success with index == 0.
+    return true;
+}
+
 bool LogitechHIDPP20Device::getLightingFeatures(
     LogitechHIDPP20LightingFeatures& features, std::string* err) {
 
@@ -183,7 +313,7 @@ bool LogitechHIDPP20Device::getLightingFeatures(
     };
 
     for(std::size_t i = 0; i < std::size(ids); ++i) {
-        if(!getFeature(ids[i], *out[i], err)) {
+        if(!getDiscoveredFeature(ids[i], *out[i], err)) {
             return false;
         }
     }
@@ -191,15 +321,8 @@ bool LogitechHIDPP20Device::getLightingFeatures(
 }
 
 bool LogitechHIDPP20Device::probeKeyboard(std::string* err) {
-    std::uint8_t major = 0;
-    std::uint8_t minor = 0;
-    if(!getProtocolVersion(major, minor, err)) {
-        return false;
-    }
-    if(major < 2) {
-        if(err) {
-            *err = "device is not HID++ 2.0";
-        }
+    LogitechHIDPP20Capabilities capabilities;
+    if(!getCapabilities(capabilities, err)) {
         return false;
     }
 
@@ -332,6 +455,8 @@ void LogitechHIDPP20Device::close() {
     }
     path_.clear();
     usbIdentity_ = {};
+    featureSetEnumerated_ = false;
+    discoveredFeatures_.clear();
 }
 
 void LogitechHIDPP20Device::normalizeLightingColor(
@@ -522,7 +647,7 @@ bool LogitechHIDPP20Device::getPerKey8080Info(
     info = {};
 
     LogitechHIDPP20FeatureInfo perKey;
-    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+    if(!getDiscoveredFeature(kFeaturePerKeyLighting, perKey, err)) {
         return false;
     }
     if(perKey.index == 0) {
@@ -655,7 +780,7 @@ bool LogitechHIDPP20Device::getColorLed8070ZoneCount(
     zoneCount = 0;
 
     LogitechHIDPP20FeatureInfo fx;
-    if(!getFeature(kFeatureColorLedEffects, fx, err)) {
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, fx, err)) {
         return false;
     }
     if(fx.index == 0) {
@@ -692,7 +817,7 @@ bool LogitechHIDPP20Device::setColorLed8070Zones(
     }
 
     LogitechHIDPP20FeatureInfo fx;
-    if(!getFeature(kFeatureColorLedEffects, fx, err)) {
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, fx, err)) {
         return false;
     }
     if(fx.index == 0) {
@@ -822,7 +947,7 @@ bool LogitechHIDPP20Device::setPerKey8080Color(
     normalizeLightingColor(r, g, b);
 
     LogitechHIDPP20FeatureInfo perKey;
-    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+    if(!getDiscoveredFeature(kFeaturePerKeyLighting, perKey, err)) {
         return false;
     }
     if(perKey.index == 0) {
@@ -866,7 +991,7 @@ bool LogitechHIDPP20Device::setPerKey8080Colors(
     }
 
     LogitechHIDPP20FeatureInfo perKey;
-    if(!getFeature(kFeaturePerKeyLighting, perKey, err)) {
+    if(!getDiscoveredFeature(kFeaturePerKeyLighting, perKey, err)) {
         return false;
     }
     if(perKey.index == 0) {
@@ -925,7 +1050,7 @@ bool LogitechHIDPP20Device::getFirmwareInfo(
     firmware.clear();
 
     LogitechHIDPP20FeatureInfo devInfo;
-    if(!getFeature(kFeatureDeviceInformation, devInfo, err)) {
+    if(!getDiscoveredFeature(kFeatureDeviceInformation, devInfo, err)) {
         return false;
     }
     if(devInfo.index == 0) {
