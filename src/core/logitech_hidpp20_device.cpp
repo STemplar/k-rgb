@@ -169,20 +169,40 @@ bool LogitechHIDPP20Device::ensureFeatureSet(std::string* err) {
 
     discoveredFeatures_.clear();
 
+    // ROOT is always feature 0x0000 at runtime index 0 and is not included in
+    // FeatureSet.GetCount(). Keep it explicit rather than querying
+    // FeatureSet.GetFeatureID(0), which is not a valid non-root index.
+    discoveredFeatures_.push_back({
+        kFeatureRoot, 0x00, 0x00, 0x00, false
+    });
+
     // Bootstrap through ROOT once: Feature Set itself is feature 0x0001.
     LogitechHIDPP20FeatureInfo featureSet;
     if(!getFeature(kFeatureSet, featureSet, err)) {
+        discoveredFeatures_.clear();
         return false;
     }
     if(featureSet.index == 0) {
         if(err) {
             *err = "HID++ feature 0x0001 (Feature Set) is not supported";
         }
+        discoveredFeatures_.clear();
         return false;
     }
 
-    // FeatureSet.GetCount (function 0). In standard HID++ 2.0 this count
-    // excludes ROOT, so valid runtime feature indexes are 0..count.
+    // ROOT.getFeature() provides authoritative Feature Set metadata including
+    // the feature-set version, so insert it before enumerating the remaining
+    // runtime feature indexes.
+    discoveredFeatures_.push_back({
+        kFeatureSet,
+        featureSet.index,
+        featureSet.type,
+        featureSet.version,
+        featureSet.versionKnown
+    });
+
+    // FeatureSet.GetCount (function 0). Count excludes ROOT; non-root runtime
+    // indexes start at 1 and run through count inclusive.
     RawReport countRaw{};
     std::size_t countRawSize = 0;
     if(!requestLongRaw(featureSet.index, 0x00, nullptr, 0,
@@ -196,12 +216,25 @@ bool LogitechHIDPP20Device::ensureFeatureSet(std::string* err) {
         return false;
     }
 
-    const std::uint16_t featureCount =
-        static_cast<std::uint16_t>(countRaw[4]) + 1u;
-    discoveredFeatures_.reserve(featureCount);
+    const std::uint16_t nonRootCount =
+        static_cast<std::uint16_t>(countRaw[4]);
+    discoveredFeatures_.reserve(static_cast<std::size_t>(nonRootCount) + 1u);
 
-    for(std::uint16_t index = 0; index < featureCount; ++index) {
+    // Feature Set v1 added featureVersion to GetFeatureID(). Version 0 only
+    // returns featureID + featureType. ROOT.getFeature() still gave us the
+    // Feature Set's own version above, so we can parse the response correctly.
+    const bool featureVersionReturned =
+        featureSet.versionKnown && featureSet.version >= 1;
+
+    for(std::uint16_t index = 1; index <= nonRootCount; ++index) {
         const std::uint8_t queryIndex = static_cast<std::uint8_t>(index);
+
+        // The Feature Set entry itself was already obtained through ROOT with
+        // complete metadata. Avoid duplicating it if its runtime index appears
+        // in the normal enumeration.
+        if(queryIndex == featureSet.index) {
+            continue;
+        }
 
         RawReport featureRaw{};
         std::size_t featureRawSize = 0;
@@ -227,11 +260,19 @@ bool LogitechHIDPP20Device::ensureFeatureSet(std::string* err) {
         feature.featureId =
             (static_cast<std::uint16_t>(featureRaw[4]) << 8) |
              static_cast<std::uint16_t>(featureRaw[5]);
-        feature.index = static_cast<std::uint8_t>(index);
+        feature.index = queryIndex;
         feature.type = featureRaw[6];
-        // Feature-set implementations that return the optional fourth byte
-        // expose the feature version here. Older/short replies leave it zero.
-        feature.version = featureRawSize > 7 ? featureRaw[7] : 0;
+        if(featureVersionReturned) {
+            if(featureRawSize < 8) {
+                if(err) {
+                    *err = "HID++ Feature Set v1+ GetFeatureID omitted feature version";
+                }
+                discoveredFeatures_.clear();
+                return false;
+            }
+            feature.version = featureRaw[7];
+            feature.versionKnown = true;
+        }
         discoveredFeatures_.push_back(feature);
     }
 
@@ -255,13 +296,12 @@ bool LogitechHIDPP20Device::getCapabilities(
 
     capabilities = {};
 
-    if(!getProtocolVersion(capabilities.protocolMajor,
-                           capabilities.protocolMinor, err)) {
+    if(!getProtocolInfo(capabilities.protocol, err)) {
         return false;
     }
-    if(capabilities.protocolMajor < 2) {
+    if(capabilities.protocol.protocolNumber < 2) {
         if(err) {
-            *err = "device is not HID++ 2.0";
+            *err = "device is not HID++ 2.0+";
         }
         return false;
     }
@@ -280,9 +320,16 @@ bool LogitechHIDPP20Device::getDiscoveredFeature(
 
     for(const auto& feature : discoveredFeatures_) {
         if(feature.featureId == featureId) {
+            if(!feature.isUsableByEndUserSoftware()) {
+                // Preserve the feature in diagnostics but do not let normal
+                // capability code activate features Logitech marks hidden,
+                // engineering or manufacturing/compliance-only.
+                return true;
+            }
             info.index = feature.index;
             info.type = feature.type;
             info.version = feature.version;
+            info.versionKnown = feature.versionKnown;
             return true;
         }
     }
@@ -1229,11 +1276,10 @@ bool LogitechHIDPP20Device::writeVeryLong(
     return true;
 }
 
-bool LogitechHIDPP20Device::getProtocolVersion(
-    std::uint8_t& major, std::uint8_t& minor, std::string* err) {
+bool LogitechHIDPP20Device::getProtocolInfo(
+    LogitechHIDPP20ProtocolInfo& info, std::string* err) {
 
-    // IRoot function 1. The two leading zero bytes plus a ping value follow
-    // Logitech's HID++ 2.0 protocol-version request definition.
+    info = {};
     constexpr std::uint8_t kPing = 0xa5;
     const std::uint8_t params[3] = {0x00, 0x00, kPing};
 
@@ -1248,8 +1294,22 @@ bool LogitechHIDPP20Device::getProtocolVersion(
         return false;
     }
 
-    major = response[4];
-    minor = response[5];
+    info.protocolNumber = response[4];
+    info.targetSoftware = response[5];
+    info.pingData = response[6];
+    return true;
+}
+
+bool LogitechHIDPP20Device::getProtocolVersion(
+    std::uint8_t& protocolNumber, std::uint8_t& targetSoftware,
+    std::string* err) {
+
+    LogitechHIDPP20ProtocolInfo info;
+    if(!getProtocolInfo(info, err)) {
+        return false;
+    }
+    protocolNumber = info.protocolNumber;
+    targetSoftware = info.targetSoftware;
     return true;
 }
 
@@ -1761,6 +1821,7 @@ bool LogitechHIDPP20Device::getFeature(
     info.index = response[4];
     info.type = response[5];
     info.version = response[6];
+    info.versionKnown = info.index != 0;
     return true;
 }
 
