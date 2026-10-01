@@ -342,3 +342,14 @@ packaging/    udev rule for rootless access
 ## License
 
 [GPL-2.0-or-later](LICENSE). © 2026 Randy Yates / BusyBeaverSoftware.
+
+
+### G810 ISO105 GUI geometry
+
+For the hardware-verified G810 PID `c331`, the GUI can now use the physical
+`ISO105` layout inferred from HID++ `0x4540` and the Logitech
+`G810_PIDC331_INTL.xml` resource. The editor exposes the same 116 physical
+lighting elements used by normal `0x8080` writes (105 keyboard keys, five
+media keys, one logo and five indicator/control lights). Candidate-only
+`GetKeyColors` addresses are deliberately excluded from the editor. The
+static rainbow and custom per-key modes use this layout directly.

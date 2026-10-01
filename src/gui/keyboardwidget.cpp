@@ -1,6 +1,7 @@
 #include "keyboardwidget.h"
 
 #include "core/keymap.h"
+#include "core/logitech_g810_iso105_visual.h"
 
 #include <QFont>
 #include <QMouseEvent>
@@ -35,6 +36,36 @@ QString labelFor(const QString& name) {
         {QStringLiteral("LEFT"), QStringLiteral("←")},
         {QStringLiteral("RIGHT"), QStringLiteral("→")},
         {QStringLiteral("LWIN"), QStringLiteral("❖")},
+        {QStringLiteral("RWIN"), QStringLiteral("❖")},
+        {QStringLiteral("GRAVE"), QStringLiteral("`")},
+        {QStringLiteral("EQUAL"), QStringLiteral("=")},
+        {QStringLiteral("LBRACKET"), QStringLiteral("[")},
+        {QStringLiteral("RBRACKET"), QStringLiteral("]")},
+        {QStringLiteral("SEMICOLON"), QStringLiteral(";")},
+        {QStringLiteral("APOSTROPHE"), QStringLiteral("'")},
+        {QStringLiteral("ISO_ENTER"), QStringLiteral("\\")},
+        {QStringLiteral("ISO_LSHIFT"), QStringLiteral("\\")},
+        {QStringLiteral("COMMA"), QStringLiteral(",")},
+        {QStringLiteral("DOT"), QStringLiteral(".")},
+        {QStringLiteral("SLASH"), QStringLiteral("/")},
+        {QStringLiteral("PRINT"), QStringLiteral("Prt")},
+        {QStringLiteral("NUMLOCK"), QStringLiteral("Num")},
+        {QStringLiteral("NUMSLASH"), QStringLiteral("/")},
+        {QStringLiteral("NUMSTAR"), QStringLiteral("*")},
+        {QStringLiteral("NUMMINUS"), QStringLiteral("-")},
+        {QStringLiteral("NUMPLUS"), QStringLiteral("+")},
+        {QStringLiteral("NUMDOT"), QStringLiteral(".")},
+        {QStringLiteral("NUMENTER"), QStringLiteral("↵")},
+        {QStringLiteral("PLAY"), QStringLiteral("▶")},
+        {QStringLiteral("STOP"), QStringLiteral("■")},
+        {QStringLiteral("PREV"), QStringLiteral("⏮")},
+        {QStringLiteral("NEXT"), QStringLiteral("⏭")},
+        {QStringLiteral("LIGHT"), QStringLiteral("Light")},
+        {QStringLiteral("GAME"), QStringLiteral("Game")},
+        {QStringLiteral("CAPS_LED"), QStringLiteral("Caps")},
+        {QStringLiteral("SCROLL_LED"), QStringLiteral("Scrl")},
+        {QStringLiteral("NUM_LED"), QStringLiteral("Num")},
+        {QStringLiteral("LOGO"), QStringLiteral("G")},
         {QStringLiteral("MUTE"), QStringLiteral("\U0001f507")},
         {QStringLiteral("VOLDN"), QStringLiteral("\U0001f509")},
         {QStringLiteral("VOLUP"), QStringLiteral("\U0001f50a")},
@@ -56,9 +87,34 @@ KeyboardWidget::KeyboardWidget(QWidget* parent) : QWidget(parent) {
     setFocusPolicy(Qt::ClickFocus);
 }
 
+double KeyboardWidget::layoutWidth() const {
+    if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
+        return krgb::logitech::g810_iso105_visual::kLayoutWidth;
+    }
+    return krgb::kLayoutWidth;
+}
+
+double KeyboardWidget::layoutHeight() const {
+    if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
+        return krgb::logitech::g810_iso105_visual::kLayoutHeight;
+    }
+    return krgb::kLayoutHeight;
+}
+
 int KeyboardWidget::heightForWidth(int w) const {
     const double inner = w - 2 * kMargin;
-    return static_cast<int>(inner * krgb::kLayoutHeight / krgb::kLayoutWidth + 2 * kMargin);
+    return static_cast<int>(inner * layoutHeight() / layoutWidth() + 2 * kMargin);
+}
+
+void KeyboardWidget::setLayoutKind(LayoutKind kind) {
+    if(kind == layoutKind_) {
+        return;
+    }
+    layoutKind_ = kind;
+    selected_.clear();
+    updateGeometry();
+    update();
+    Q_EMIT selectionChanged(0);
 }
 
 void KeyboardWidget::setKeyColors(const QHash<QString, QColor>& colors) {
@@ -84,16 +140,38 @@ QStringList KeyboardWidget::selectedKeys() const {
 
 void KeyboardWidget::recomputeLayout() {
     rects_.clear();
-    rects_.reserve(static_cast<int>(krgb::kKeyCount));
 
+    const double sourceW = layoutWidth();
+    const double sourceH = layoutHeight();
     const double availW = width() - 2 * kMargin;
     const double availH = height() - 2 * kMargin;
-    const double unit = qMin(availW / krgb::kLayoutWidth, availH / krgb::kLayoutHeight);
+    const double unit = qMin(availW / sourceW, availH / sourceH);
 
     // Centre the layout within the widget.
-    const double originX = (width() - unit * krgb::kLayoutWidth) / 2.0;
-    const double originY = (height() - unit * krgb::kLayoutHeight) / 2.0;
+    const double originX = (width() - unit * sourceW) / 2.0;
+    const double originY = (height() - unit * sourceH) / 2.0;
 
+    if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
+        const auto& elements = krgb::logitech::g810_iso105_visual::elements();
+        rects_.reserve(static_cast<int>(elements.size()));
+        for(const auto& element : elements) {
+            const auto* def =
+                krgb::logitech::g810_iso105_visual::definition(element);
+            if(!def) {
+                continue;
+            }
+
+            const QRectF cell(originX + element.x * unit + kKeyInset / 2.0,
+                              originY + element.y * unit + kKeyInset / 2.0,
+                              qMax(1.0, element.w * unit - kKeyInset),
+                              qMax(1.0, element.h * unit - kKeyInset));
+            const QString name = QString::fromLatin1(def->name);
+            rects_.push_back({name, labelFor(name), cell});
+        }
+        return;
+    }
+
+    rects_.reserve(static_cast<int>(krgb::kKeyCount));
     for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
         const krgb::KeyDef& k = krgb::kKeyMap[i];
         if(!(k.models & modelBit_)) {
@@ -103,7 +181,8 @@ void KeyboardWidget::recomputeLayout() {
                           originY + k.y * unit + kKeyInset / 2.0,
                           k.w * unit - kKeyInset,
                           k.h * unit - kKeyInset);
-        rects_.push_back({QString::fromLatin1(k.name), cell});
+        const QString name = QString::fromLatin1(k.name);
+        rects_.push_back({name, labelFor(name), cell});
     }
 }
 
@@ -138,7 +217,9 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         // Label colour contrasts with the key fill.
         const double lum = 0.299 * fill.red() + 0.587 * fill.green() + 0.114 * fill.blue();
         painter.setPen(lum > 140 ? QColor(20, 20, 20) : QColor(225, 225, 225));
-        painter.drawText(r.cell, Qt::AlignCenter, labelFor(r.name));
+        if(r.cell.width() >= 10.0 && r.cell.height() >= 8.0) {
+            painter.drawText(r.cell, Qt::AlignCenter, r.label);
+        }
     }
 }
 
@@ -223,11 +304,23 @@ void KeyboardWidget::clearSelection() {
 
 void KeyboardWidget::selectAll() {
     selected_.clear();
-    for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
-        if(krgb::kKeyMap[i].models & modelBit_) {
-            selected_.insert(QString::fromLatin1(krgb::kKeyMap[i].name));
+
+    if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
+        for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+            const auto* def =
+                krgb::logitech::g810_iso105_visual::definition(element);
+            if(def) {
+                selected_.insert(QString::fromLatin1(def->name));
+            }
+        }
+    } else {
+        for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
+            if(krgb::kKeyMap[i].models & modelBit_) {
+                selected_.insert(QString::fromLatin1(krgb::kKeyMap[i].name));
+            }
         }
     }
+
     update();
     Q_EMIT selectionChanged(selected_.size());
 }
@@ -236,11 +329,23 @@ void KeyboardWidget::fillAll(const QColor& color) {
     if(!color.isValid()) {
         return;
     }
-    for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
-        if(krgb::kKeyMap[i].models & modelBit_) {
-            colors_.insert(QString::fromLatin1(krgb::kKeyMap[i].name), color);
+
+    if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
+        for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+            const auto* def =
+                krgb::logitech::g810_iso105_visual::definition(element);
+            if(def) {
+                colors_.insert(QString::fromLatin1(def->name), color);
+            }
+        }
+    } else {
+        for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
+            if(krgb::kKeyMap[i].models & modelBit_) {
+                colors_.insert(QString::fromLatin1(krgb::kKeyMap[i].name), color);
+            }
         }
     }
+
     update();
     Q_EMIT changed();
 }

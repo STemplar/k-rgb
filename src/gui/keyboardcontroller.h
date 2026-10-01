@@ -33,6 +33,14 @@ public:
     QString modelName() const { return modelName_; }
     quint8  modelBit() const { return modelBit_; }  // Alienware KeyboardModel::bit
     bool    supportsAdvancedModes() const { return backend_ == Backend::Alienware; }
+    bool    supportsPerKeyColors() const {
+        return backend_ == Backend::Alienware ||
+               (backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_);
+    }
+    bool    supportsStaticRainbow() const { return supportsPerKeyColors(); }
+    bool    usesLogitechG810Iso105VisualLayout() const {
+        return backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_;
+    }
     bool    supportsZoneColors() const {
         return backend_ == Backend::LogitechHIDPP20 && logitechZoneCount_ > 1;
     }
@@ -65,5 +73,6 @@ private:
     QString            modelName_;
     quint8             modelBit_ = 0xFF;
     int                logitechZoneCount_ = 0;
+    bool               logitechG810Iso105Visual_ = false;
     QTimer*            pollTimer_ = nullptr;
 };

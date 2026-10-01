@@ -17,7 +17,14 @@
 class KeyboardWidget : public QWidget {
     Q_OBJECT
 public:
+    enum class LayoutKind {
+        Alienware,
+        LogitechG810Iso105,
+    };
+
     explicit KeyboardWidget(QWidget* parent = nullptr);
+
+    void setLayoutKind(LayoutKind kind);
 
     // Only keys that have an assigned (non-default) colour.
     QHash<QString, QColor> keyColors() const { return colors_; }
@@ -51,17 +58,21 @@ protected:
 private:
     struct KeyRect {
         QString name;
+        QString label;
         QRectF  cell;  // pixel rect, recomputed on resize
     };
 
     void          recomputeLayout();
+    double        layoutWidth() const;
+    double        layoutHeight() const;
     const QString keyAt(const QPointF& p) const;
 
     QHash<QString, QColor> colors_;     // assigned colours only
     QSet<QString>          selected_;
     QVector<KeyRect>       rects_;
 
-    quint8        modelBit_   = 0xFF;  // which keys to draw (KeyboardModel::bit)
+    LayoutKind    layoutKind_ = LayoutKind::Alienware;
+    quint8        modelBit_   = 0xFF;  // Alienware KeyboardModel::bit
     bool          dragging_   = false;
     bool          moved_      = false;
     QPointF       pressPos_;

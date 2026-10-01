@@ -751,17 +751,25 @@ void MainWindow::onModeChanged() {
     }
     const ModeEntry& m = modes_.at(idx);
     const bool advanced = controller_->supportsAdvancedModes();
+    const bool perKey = controller_->supportsPerKeyColors();
+    const bool rainbow = controller_->supportsStaticRainbow();
     const bool zoned = controller_->supportsZoneColors();
-    const bool supported = advanced || m.solid || (m.zones && zoned);
+    const bool effectMode = !m.solid && !m.rainbow && !m.perkey && !m.zones;
+    const bool supported =
+        m.solid ||
+        (m.rainbow && rainbow) ||
+        (m.perkey && perKey) ||
+        (m.zones && zoned) ||
+        (effectMode && advanced);
 
     colorButton_->setEnabled(supported && m.usesColor);
     speedCombo_->setEnabled(supported && m.usesSpeed);
     directionCombo_->setEnabled(supported && m.usesDirection);
     applyButton_->setEnabled(controller_->isConnected() && supported);
 
-    perKeyPanel_->setVisible(advanced && m.perkey);
+    perKeyPanel_->setVisible(perKey && m.perkey);
     keyboardZonePanel_->setVisible(zoned && m.zones);
-    if(advanced && m.perkey) {
+    if(perKey && m.perkey) {
         // Grow (never shrink) so the keyboard has room.
         resize(qMax(width(), 780), qMax(height(), 560));
     }
@@ -961,18 +969,45 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         statusLabel_->setText(i18n("<span style='color:#27ae60'>●</span> %1", model));
         statusLabel_->setToolTip(i18n("Connected to %1 (%2)", model,
                                       path.isEmpty() ? i18n("unknown") : path));
+        keyboardWidget_->setLayoutKind(
+            controller_->usesLogitechG810Iso105VisualLayout()
+                ? KeyboardWidget::LayoutKind::LogitechG810Iso105
+                : KeyboardWidget::LayoutKind::Alienware);
         keyboardWidget_->setModelBit(controller_->modelBit());
         refreshKeyboardZoneEditor();
 
         if(!controller_->supportsAdvancedModes()) {
             const LightingSettings saved = LightingSettings::load(Profiles::current());
-            const bool preferZones =
-                controller_->supportsZoneColors() && saved.kind == LightingSettings::Zones;
+            bool selected = false;
+
             for(int i = 0; i < modes_.size(); ++i) {
-                if((preferZones && modes_.at(i).zones) ||
-                   (!preferZones && modes_.at(i).solid)) {
+                const auto& mode = modes_.at(i);
+                if(saved.kind == LightingSettings::PerKey &&
+                   controller_->supportsPerKeyColors() && mode.perkey) {
                     modeCombo_->setCurrentIndex(i);
+                    selected = true;
                     break;
+                }
+                if(saved.kind == LightingSettings::Rainbow &&
+                   controller_->supportsStaticRainbow() && mode.rainbow) {
+                    modeCombo_->setCurrentIndex(i);
+                    selected = true;
+                    break;
+                }
+                if(saved.kind == LightingSettings::Zones &&
+                   controller_->supportsZoneColors() && mode.zones) {
+                    modeCombo_->setCurrentIndex(i);
+                    selected = true;
+                    break;
+                }
+            }
+
+            if(!selected) {
+                for(int i = 0; i < modes_.size(); ++i) {
+                    if(modes_.at(i).solid) {
+                        modeCombo_->setCurrentIndex(i);
+                        break;
+                    }
                 }
             }
         }

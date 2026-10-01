@@ -1,6 +1,8 @@
 #include "keyboardcontroller.h"
 
 #include "core/keymap.h"
+#include "core/logitech_g610_g810_keymap.h"
+#include "core/logitech_g810_iso105_visual.h"
 
 #include <QFileInfo>
 #include <QTimer>
@@ -41,6 +43,7 @@ void KeyboardController::refresh() {
     QString newModelName;
     quint8 newModelBit = krgb::kAllModels;
     Backend newBackend = Backend::None;
+    bool newLogitechG810Iso105Visual = false;
 
     if(!alienwarePath.empty()) {
         nowConnected = true;
@@ -84,17 +87,34 @@ void KeyboardController::refresh() {
         if(logitechDevice_.getColorLed8070ZoneCount(zones, &zoneErr)) {
             newLogitechZoneCount = static_cast<int>(zones);
         }
+
+        const auto* known =
+            krgb::logitechKnownDeviceForProductId(logitechDevice_.productId());
+        if(known && known->model == krgb::LogitechKnownModel::G810OrionSpectrum) {
+            krgb::LogitechHIDPP20KeyboardLayoutInfo layoutInfo;
+            std::string layoutErr;
+            if(logitechDevice_.getKeyboardLayout(layoutInfo, &layoutErr)) {
+                const auto* geometry =
+                    krgb::logitech::g610_g810::inferGeometryForLayout(
+                        krgb::logitech::g610_g810::kModelG810,
+                        layoutInfo.countryCode);
+                newLogitechG810Iso105Visual =
+                    geometry && std::string_view(geometry->name) == "ISO105";
+            }
+        }
     }
 
     if(nowConnected != connected_ || newPath != path_ ||
        newBackend != backend_ || newModelName != modelName_ ||
-       newLogitechZoneCount != logitechZoneCount_) {
+       newLogitechZoneCount != logitechZoneCount_ ||
+       newLogitechG810Iso105Visual != logitechG810Iso105Visual_) {
         connected_ = nowConnected;
         path_ = newPath;
         modelName_ = newModelName;
         modelBit_ = newModelBit;
         backend_ = newBackend;
         logitechZoneCount_ = newLogitechZoneCount;
+        logitechG810Iso105Visual_ = newLogitechG810Iso105Visual;
 
         if(!connected_) {
             if(device_.isOpen()) {
@@ -168,9 +188,61 @@ bool KeyboardController::applyRainbow(int brightnessPct) {
         return false;
     }
     if(backend_ == Backend::LogitechHIDPP20) {
-        Q_EMIT error(i18n("This Logitech model is connected, but the GUI rainbow "
-                          "layout is not available yet."));
-        return false;
+        if(!logitechG810Iso105Visual_) {
+            Q_EMIT error(i18n("Static per-key rainbow is not available for this Logitech layout."));
+            return false;
+        }
+
+        const qreal v = qBound(0, brightnessPct, 100) / 100.0;
+        std::vector<krgb::LogitechHIDPP20KeyColor> keyboard;
+        std::vector<krgb::LogitechHIDPP20KeyColor> media;
+        std::vector<krgb::LogitechHIDPP20KeyColor> logo;
+        std::vector<krgb::LogitechHIDPP20KeyColor> indicators;
+
+        for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+            const qreal hue =
+                (element.x + element.w / 2.0f) /
+                krgb::logitech::g810_iso105_visual::kLayoutWidth;
+            const QColor c = QColor::fromHsvF(hue, 1.0, v);
+            const krgb::LogitechHIDPP20KeyColor value{
+                element.keyId,
+                static_cast<std::uint8_t>(c.red()),
+                static_cast<std::uint8_t>(c.green()),
+                static_cast<std::uint8_t>(c.blue()),
+            };
+
+            switch(element.keyType) {
+                case krgb::logitech::g610_g810::kKeyboardKeyType:
+                    keyboard.push_back(value);
+                    break;
+                case krgb::logitech::g610_g810::kMediaKeyType:
+                    media.push_back(value);
+                    break;
+                case krgb::logitech::g610_g810::kLogoKeyType:
+                    logo.push_back(value);
+                    break;
+                case krgb::logitech::g610_g810::kIndicatorKeyType:
+                    indicators.push_back(value);
+                    break;
+            }
+        }
+
+        std::string err;
+        const auto writeGroup =
+            [this, &err](std::uint16_t keyType,
+                         const std::vector<krgb::LogitechHIDPP20KeyColor>& values) {
+                return values.empty() ||
+                       logitechDevice_.setPerKey8080Colors(keyType, values, &err);
+            };
+
+        if(!writeGroup(krgb::logitech::g610_g810::kKeyboardKeyType, keyboard) ||
+           !writeGroup(krgb::logitech::g610_g810::kMediaKeyType, media) ||
+           !writeGroup(krgb::logitech::g610_g810::kLogoKeyType, logo) ||
+           !writeGroup(krgb::logitech::g610_g810::kIndicatorKeyType, indicators)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
     }
     const qreal v = qBound(0, brightnessPct, 100) / 100.0;
     const std::uint8_t bit = activeBit(device_);
@@ -201,9 +273,65 @@ bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, in
         return false;
     }
     if(backend_ == Backend::LogitechHIDPP20) {
-        Q_EMIT error(i18n("Per-key GUI geometry is not available for this Logitech "
-                          "model yet."));
-        return false;
+        if(!logitechG810Iso105Visual_) {
+            Q_EMIT error(i18n("Per-key GUI geometry is not available for this Logitech layout."));
+            return false;
+        }
+
+        const int pct = qBound(0, brightnessPct, 100);
+        std::vector<krgb::LogitechHIDPP20KeyColor> keyboard;
+        std::vector<krgb::LogitechHIDPP20KeyColor> media;
+        std::vector<krgb::LogitechHIDPP20KeyColor> logo;
+        std::vector<krgb::LogitechHIDPP20KeyColor> indicators;
+
+        for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+            const auto* def =
+                krgb::logitech::g810_iso105_visual::definition(element);
+            if(!def) {
+                continue;
+            }
+
+            const QColor source =
+                keyColors.value(QString::fromLatin1(def->name), QColor(0, 0, 0));
+            const krgb::LogitechHIDPP20KeyColor value{
+                element.keyId,
+                static_cast<std::uint8_t>(source.red() * pct / 100),
+                static_cast<std::uint8_t>(source.green() * pct / 100),
+                static_cast<std::uint8_t>(source.blue() * pct / 100),
+            };
+
+            switch(element.keyType) {
+                case krgb::logitech::g610_g810::kKeyboardKeyType:
+                    keyboard.push_back(value);
+                    break;
+                case krgb::logitech::g610_g810::kMediaKeyType:
+                    media.push_back(value);
+                    break;
+                case krgb::logitech::g610_g810::kLogoKeyType:
+                    logo.push_back(value);
+                    break;
+                case krgb::logitech::g610_g810::kIndicatorKeyType:
+                    indicators.push_back(value);
+                    break;
+            }
+        }
+
+        std::string err;
+        const auto writeGroup =
+            [this, &err](std::uint16_t keyType,
+                         const std::vector<krgb::LogitechHIDPP20KeyColor>& values) {
+                return values.empty() ||
+                       logitechDevice_.setPerKey8080Colors(keyType, values, &err);
+            };
+
+        if(!writeGroup(krgb::logitech::g610_g810::kKeyboardKeyType, keyboard) ||
+           !writeGroup(krgb::logitech::g610_g810::kMediaKeyType, media) ||
+           !writeGroup(krgb::logitech::g610_g810::kLogoKeyType, logo) ||
+           !writeGroup(krgb::logitech::g610_g810::kIndicatorKeyType, indicators)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
     }
     const int pct = qBound(0, brightnessPct, 100);
     const std::uint8_t bit = activeBit(device_);
