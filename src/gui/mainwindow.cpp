@@ -6,6 +6,7 @@
 #include "zonegridwidget.h"
 #include "core/aw410k_device.h"
 #include "core/keymap.h"
+#include "core/logitech_g810_iso105_visual.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -51,10 +52,28 @@ namespace {
 // where the keys actually sit on the board.
 
 // Ukraine: blue top half, yellow bottom half (split across the layout height).
-QHash<QString, QColor> makeUkraineFlag() {
+// Generate from the active physical geometry so Logitech-only controls/media
+// are not left unassigned by an Alienware-only preset map.
+QHash<QString, QColor> makeUkraineFlag(bool logitechG810Iso105) {
     QHash<QString, QColor> m;
     const QColor blue(0, 87, 183);
     const QColor yellow(255, 215, 0);
+
+    if(logitechG810Iso105) {
+        const float mid =
+            krgb::logitech::g810_iso105_visual::kLayoutHeight / 2.0f;
+        for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+            const auto* def =
+                krgb::logitech::g810_iso105_visual::definition(element);
+            if(!def) {
+                continue;
+            }
+            const float cy = element.y + element.h / 2.0f;
+            m.insert(QString::fromLatin1(def->name), cy < mid ? blue : yellow);
+        }
+        return m;
+    }
+
     const float mid = krgb::kLayoutHeight / 2.0f;
     for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
         const krgb::KeyDef& k = krgb::kKeyMap[i];
@@ -66,24 +85,50 @@ QHash<QString, QColor> makeUkraineFlag() {
 
 // USA: solid blue over the left third (full height), red/white stripes by row
 // across the right two-thirds.
-QHash<QString, QColor> makeUsaFlag() {
+QHash<QString, QColor> makeUsaFlag(bool logitechG810Iso105) {
     QHash<QString, QColor> m;
     const QColor red(140, 22, 36);
     const QColor white(255, 255, 255);
     const QColor blue(28, 28, 75);
-    const float blueRight = krgb::kLayoutWidth / 3.0f;  // left third is blue
+
+    if(logitechG810Iso105) {
+        const float blueRight =
+            krgb::logitech::g810_iso105_visual::kLayoutWidth / 3.0f;
+        const float stripeHeight =
+            krgb::logitech::g810_iso105_visual::kLayoutHeight / 8.0f;
+        for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
+            const auto* def =
+                krgb::logitech::g810_iso105_visual::definition(element);
+            if(!def) {
+                continue;
+            }
+            const float cx = element.x + element.w / 2.0f;
+            const float cy = element.y + element.h / 2.0f;
+            QColor color;
+            if(cx < blueRight) {
+                color = blue;
+            } else {
+                const int stripe = static_cast<int>(cy / stripeHeight);
+                color = (stripe % 2 == 0) ? red : white;
+            }
+            m.insert(QString::fromLatin1(def->name), color);
+        }
+        return m;
+    }
+
+    const float blueRight = krgb::kLayoutWidth / 3.0f;
     for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
         const krgb::KeyDef& k = krgb::kKeyMap[i];
         const float cx = k.x + k.w / 2.0f;
         const float cy = k.y + k.h / 2.0f;
-        QColor c;
+        QColor color;
         if(cx < blueRight) {
-            c = blue;
+            color = blue;
         } else {
-            const int row = static_cast<int>(cy);  // ~one stripe per key row
-            c = (row % 2 == 0) ? red : white;       // top stripe red
+            const int row = static_cast<int>(cy);
+            color = (row % 2 == 0) ? red : white;
         }
-        m.insert(QString::fromLatin1(k.name), c);
+        m.insert(QString::fromLatin1(k.name), color);
     }
     return m;
 }
@@ -275,11 +320,13 @@ QWidget* MainWindow::buildKeyboardPage() {
     pkLayout->addLayout(presetRow);
 
     connect(usaBtn, &QPushButton::clicked, this, [this] {
-        keyboardWidget_->setKeyColors(makeUsaFlag());
+        keyboardWidget_->setKeyColors(
+            makeUsaFlag(controller_->usesLogitechG810Iso105VisualLayout()));
         onPerKeyChanged();
     });
     connect(ukrBtn, &QPushButton::clicked, this, [this] {
-        keyboardWidget_->setKeyColors(makeUkraineFlag());
+        keyboardWidget_->setKeyColors(
+            makeUkraineFlag(controller_->usesLogitechG810Iso105VisualLayout()));
         onPerKeyChanged();
     });
 
