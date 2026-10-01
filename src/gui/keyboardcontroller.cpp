@@ -72,7 +72,35 @@ void KeyboardController::refresh() {
         if(logitechPresent) {
             nowConnected = true;
             newPath = QString::fromStdString(logitechDevice_.path());
-            newModelName = QString::fromStdString(logitechDevice_.displayName());
+
+            // Prefer the HID++ 0x0005 product name over the generic USB
+            // product string.  The G810 for example exposes "G810 Orion
+            // Spectrum" through HID++, while USB reports "Gaming Keyboard
+            // G810".  Prefix it with the normalized manufacturer name for the
+            // user-facing identity.
+            QString manufacturer =
+                QString::fromStdString(logitechDevice_.usbIdentity().manufacturer).trimmed();
+            if(manufacturer.contains(QStringLiteral("Logitech"),
+                                     Qt::CaseInsensitive)) {
+                manufacturer = QStringLiteral("Logitech");
+            }
+
+            krgb::LogitechHIDPP20DeviceTypeInfo deviceIdentity;
+            std::string identityErr;
+            if(logitechDevice_.getDeviceTypeAndName(deviceIdentity, &identityErr) &&
+               !deviceIdentity.name.empty()) {
+                const QString productName =
+                    QString::fromStdString(deviceIdentity.name).trimmed();
+                if(manufacturer.isEmpty() ||
+                   productName.startsWith(manufacturer, Qt::CaseInsensitive)) {
+                    newModelName = productName;
+                } else {
+                    newModelName = manufacturer + QLatin1Char(' ') + productName;
+                }
+            } else {
+                newModelName = QString::fromStdString(logitechDevice_.displayName());
+            }
+
             newBackend = Backend::LogitechHIDPP20;
             if(device_.isOpen()) {
                 device_.close();
