@@ -160,6 +160,32 @@ struct LogitechHIDPP20PerKey8081Info {
     std::vector<std::uint8_t> zoneIds;
 };
 
+struct LogitechHIDPP20RgbEffectInfo {
+    std::uint8_t clusterIndex = 0;
+    std::uint8_t effectIndex = 0;
+    std::uint16_t effectId = 0;
+    std::uint16_t capabilities = 0;
+    std::uint16_t periodMs = 0;
+};
+
+struct LogitechHIDPP20RgbClusterInfo {
+    std::uint8_t clusterIndex = 0;
+    std::uint16_t location = 0;
+    std::uint8_t effectCount = 0;
+    std::uint8_t displayPersistencyCapabilities = 0;
+    bool effectPersistency = false;
+    bool multiLedPattern = false;
+    std::vector<LogitechHIDPP20RgbEffectInfo> effects;
+};
+
+struct LogitechHIDPP20RgbEffectsInfo {
+    std::uint8_t clusterCount = 0;
+    std::uint16_t nvCapabilities = 0;
+    std::uint16_t extCapabilities = 0;
+    std::uint8_t multiClusterEffectCount = 0;
+    std::vector<LogitechHIDPP20RgbClusterInfo> clusters;
+};
+
 struct LogitechHIDPP20ReportRateInfo {
     std::uint16_t supportedMask = 0;
     std::uint8_t current = 0;
@@ -290,6 +316,8 @@ public:
                              std::string* err = nullptr);
     bool getPerKey8081Info(LogitechHIDPP20PerKey8081Info& info,
                            std::string* err = nullptr);
+    bool getRgbEffects8071Info(LogitechHIDPP20RgbEffectsInfo& info,
+                               std::string* err = nullptr);
     bool getReportRateInfo(LogitechHIDPP20ReportRateInfo& info,
                            std::string* err = nullptr);
     bool getModeStatusInfo(LogitechHIDPP20ModeStatusInfo& info,
