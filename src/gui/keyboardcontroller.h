@@ -9,10 +9,12 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 #include "core/aw410k_device.h"
 #include "core/logitech_hidpp20_device.h"
 
+class QSocketNotifier;
 class QTimer;
 
 class KeyboardController : public QObject {
@@ -45,6 +47,7 @@ public:
         if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
             const auto mode = static_cast<krgb::Mode>(modeValue);
             return mode == krgb::Mode::Breathing ||
+                   mode == krgb::Mode::Pulse ||       // LGS Key Press (software)
                    mode == krgb::Mode::Spectrum ||
                    mode == krgb::Mode::RainbowWave ||
                    mode == krgb::Mode::Scanner;
@@ -79,6 +82,18 @@ Q_SIGNALS:
 private:
     bool ensureOpen();
 
+    // Logitech G810 "Key Press" is an LGS software effect: pressed keys light
+    // to the foreground colour and fade back to the background.  Input is read
+    // from the kernel evdev nodes belonging to the same USB keyboard; lighting
+    // is rendered through HID++ 0x8080.
+    bool startG810KeyPressEffect(const QColor& foreground, int brightnessPct,
+                                 int fadeMs);
+    void stopG810KeyPressEffect();
+    bool openG810InputMonitors(QString& error);
+    void handleG810InputReady(int fd);
+    void handleG810KeyPress(std::uint16_t keyType, std::uint8_t keyId);
+    bool renderG810KeyPressFrame(bool includeStaticGroups = false);
+
     krgb::AW410KDevice device_;
     krgb::LogitechHIDPP20Device logitechDevice_;
     Backend             backend_ = Backend::None;
@@ -89,4 +104,14 @@ private:
     int                logitechZoneCount_ = 0;
     bool               logitechG810Iso105Visual_ = false;
     QTimer*            pollTimer_ = nullptr;
+
+    bool                    g810KeyPressActive_ = false;
+    QColor                  g810KeyPressForeground_{0, 220, 255};
+    QColor                  g810KeyPressBackground_{0, 0, 0};
+    int                     g810KeyPressFadeMs_ = 150;
+    QTimer*                 g810KeyPressFadeTimer_ = nullptr;
+    QVector<int>            g810InputFds_;
+    QVector<QSocketNotifier*> g810InputNotifiers_;
+    QHash<int, quint32>     g810LastScanByFd_;
+    QHash<quint32, qint64>  g810KeyPressStartedMs_;
 };
