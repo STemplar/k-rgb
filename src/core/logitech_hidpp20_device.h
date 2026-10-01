@@ -434,9 +434,10 @@ public:
     bool getPerKey8080Info(LogitechHIDPP20PerKeyInfo& info,
                            std::string* err = nullptr);
 
-    // Set every firmware lighting zone to one static colour through feature
-    // 0x8070 (Color LED Effects). Zone count and the static-effect index are
-    // discovered at runtime rather than assumed from model-specific captures.
+    // Set all normal lighting elements to one static colour. 0x8070 zones are
+    // discovered at runtime. For 0x8080, known G610/G810 layouts filter the
+    // firmware candidate superset to physical addresses; unknown models keep
+    // the device-reported candidate topology.
     bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                   std::string* err = nullptr);
 

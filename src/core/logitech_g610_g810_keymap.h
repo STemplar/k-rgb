@@ -21,6 +21,8 @@
 #include <cstdint>
 #include <string_view>
 
+#include "core/logitech_keyboard_layout.h"
+
 namespace krgb::logitech::g610_g810 {
 
 inline constexpr std::uint16_t kKeyboardKeyType = 0x0001;
@@ -354,6 +356,52 @@ inline const KeyboardGeometry* findGeometry(std::string_view name) {
     return nullptr;
 }
 
+inline const KeyboardGeometry* inferGeometryForLayout(
+    std::uint8_t modelMask, std::uint8_t countryCode) {
+
+    const char* geometryName = nullptr;
+
+    // Known model/layout exceptions from the shipped LGS resources.
+    if(countryCode == 0x0a) {
+        geometryName = "JIS108";
+    } else if(countryCode == 0x37) {
+        geometryName = "INTL104";
+    } else if(countryCode == 0x09 || countryCode == 0x3e) {
+        if(modelMask == kModelG810) {
+            geometryName = "KOR106";
+        } else if(modelMask == kModelG610) {
+            geometryName = "ANSI104";
+        }
+    } else if(countryCode == 0x07 && modelMask == kModelG610) {
+        // The shipped G610 Russian resource uses the INTL104 physical set,
+        // while the G810 Russian resource uses ISO105.
+        geometryName = "INTL104";
+    } else if(countryCode == 0x33) {
+        // Shipped G610/G810 Thai resources use the ANSI104 physical set.
+        geometryName = "ANSI104";
+    } else {
+        const char* family = logitechKeyboardLayoutFamily(countryCode);
+        if(family) {
+            const std::string_view familyView{family};
+            if(familyView == "ANSI") {
+                geometryName = "ANSI104";
+            } else if(familyView.rfind("ISO/", 0) == 0) {
+                geometryName = "ISO105";
+            }
+        }
+    }
+
+    if(!geometryName) {
+        return nullptr;
+    }
+
+    const auto* geometry = findGeometry(geometryName);
+    if(!geometry || !geometrySupportsModel(*geometry, modelMask)) {
+        return nullptr;
+    }
+    return geometry;
+}
+
 inline bool geometryHasKey(const KeyboardGeometry& geometry, std::uint8_t keyId) {
     for(std::size_t i = 0; i < geometry.keyCount; ++i) {
         if(geometry.keyIds[i] == keyId) {
@@ -361,6 +409,24 @@ inline bool geometryHasKey(const KeyboardGeometry& geometry, std::uint8_t keyId)
         }
     }
     return false;
+}
+
+inline bool isPhysicalLightingAddress(
+    const KeyboardGeometry& geometry,
+    std::uint16_t keyType, std::uint8_t keyId) {
+
+    switch(keyType) {
+        case kKeyboardKeyType:
+            return geometryHasKey(geometry, keyId);
+        case kMediaKeyType:
+            return findById(kMedia, keyId) != nullptr;
+        case kLogoKeyType:
+            return findById(kLogo, keyId) != nullptr;
+        case kIndicatorKeyType:
+            return findById(kIndicators, keyId) != nullptr;
+        default:
+            return false;
+    }
 }
 
 inline const LightingElement* findKeyboardById(

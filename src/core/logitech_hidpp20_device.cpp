@@ -1,4 +1,5 @@
 #include "core/logitech_hidpp20_device.h"
+#include "core/logitech_g610_g810_keymap.h"
 
 #include <fcntl.h>
 #include <poll.h>
@@ -1585,16 +1586,70 @@ bool LogitechHIDPP20Device::setSolid(
             return false;
         }
 
-        // Program exactly the address groups and IDs reported by the device.
-        // Do not assume media/G-key/logo/indicator counts from a model table.
+        // 0x8080 GetKeyColors can expose a layout-independent candidate
+        // address superset. For G610/G810 models with a known LGS geometry,
+        // intersect candidates with the physical model/layout before normal
+        // bulk writes. Low-level explicit per-address writes remain unfiltered
+        // for diagnostics and reverse engineering.
+        const logitech::g610_g810::KeyboardGeometry* physicalGeometry = nullptr;
+        std::uint8_t modelMask = 0;
+        if(const auto* known = logitechKnownDeviceForProductId(productId())) {
+            switch(known->model) {
+                case LogitechKnownModel::G610Orion:
+                    modelMask = logitech::g610_g810::kModelG610;
+                    break;
+                case LogitechKnownModel::G810OrionSpectrum:
+                    modelMask = logitech::g610_g810::kModelG810;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if(modelMask != 0) {
+            LogitechHIDPP20KeyboardLayoutInfo layoutInfo;
+            std::string layoutError;
+            if(getKeyboardLayout(layoutInfo, &layoutError)) {
+                physicalGeometry =
+                    logitech::g610_g810::inferGeometryForLayout(
+                        modelMask, layoutInfo.countryCode);
+            }
+        }
+
         for(const auto& type : topology.types) {
             if(type.colors.empty()) {
                 continue;
             }
+
             std::vector<LogitechHIDPP20KeyColor> colors;
             colors.reserve(type.colors.size());
             for(const auto& item : type.colors) {
-                colors.push_back({item.keyId, r, g, b});
+                bool include = true;
+                if(physicalGeometry) {
+                    switch(type.keyType) {
+                        case logitech::g610_g810::kKeyboardKeyType:
+                        case logitech::g610_g810::kMediaKeyType:
+                        case logitech::g610_g810::kLogoKeyType:
+                        case logitech::g610_g810::kIndicatorKeyType:
+                            include =
+                                logitech::g610_g810::isPhysicalLightingAddress(
+                                    *physicalGeometry,
+                                    type.keyType, item.keyId);
+                            break;
+                        default:
+                            // Unknown key types are not discarded merely
+                            // because the G610/G810 resource map has no legend.
+                            break;
+                    }
+                }
+
+                if(include) {
+                    colors.push_back({item.keyId, r, g, b});
+                }
+            }
+
+            if(colors.empty()) {
+                continue;
             }
             if(!setPerKey8080Colors(type.keyType, colors, err)) {
                 return false;

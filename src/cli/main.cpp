@@ -428,60 +428,15 @@ int runLogitech(const std::vector<std::string>& a) {
             return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
         }
 
-        const char* geometryName = nullptr;
-
-        // Layouts whose physical form differs from the broad family mapping.
-        if(layoutInfo.countryCode == 0x0a) {
-            geometryName = "JIS108";
-        } else if(layoutInfo.countryCode == 0x37) {
-            geometryName = "INTL104";
-        } else if((geometryModelMask & logitech::g610_g810::kModelG810) != 0 &&
-                  (layoutInfo.countryCode == 0x09 ||
-                   layoutInfo.countryCode == 0x3e)) {
-            geometryName = "KOR106";
-        } else if(layoutInfo.countryCode == 0x33) {
-            // Shipped G610/G810 THAI resources use the ANSI104 physical set.
-            geometryName = "ANSI104";
-        } else {
-            const char* family = logitechKeyboardLayoutFamily(layoutInfo.countryCode);
-            if(family && std::strcmp(family, "ANSI") == 0) {
-                geometryName = "ANSI104";
-            } else if(family && std::strncmp(family, "ISO/", 4) == 0) {
-                geometryName = "ISO105";
-            }
-        }
-
-        if(!geometryName) {
-            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
-        }
-
-        const auto* geometry = logitech::g610_g810::findGeometry(geometryName);
-        if(!geometry ||
-           !logitech::g610_g810::geometrySupportsModel(*geometry,
-                                                       geometryModelMask)) {
-            return static_cast<const logitech::g610_g810::KeyboardGeometry*>(nullptr);
-        }
-        return geometry;
+        return logitech::g610_g810::inferGeometryForLayout(
+            geometryModelMask, layoutInfo.countryCode);
     };
 
     auto isPhysicalLightingAddress =
         [&](const logitech::g610_g810::KeyboardGeometry& geometry,
             std::uint16_t keyType, std::uint8_t keyId) {
-            switch(keyType) {
-                case logitech::g610_g810::kKeyboardKeyType:
-                    return logitech::g610_g810::geometryHasKey(geometry, keyId);
-                case logitech::g610_g810::kMediaKeyType:
-                    return logitech::g610_g810::findById(
-                               logitech::g610_g810::kMedia, keyId) != nullptr;
-                case logitech::g610_g810::kLogoKeyType:
-                    return logitech::g610_g810::findById(
-                               logitech::g610_g810::kLogo, keyId) != nullptr;
-                case logitech::g610_g810::kIndicatorKeyType:
-                    return logitech::g610_g810::findById(
-                               logitech::g610_g810::kIndicators, keyId) != nullptr;
-                default:
-                    return false;
-            }
+            return logitech::g610_g810::isPhysicalLightingAddress(
+                geometry, keyType, keyId);
         };
 
     if(sub == "layouts") {
@@ -1299,11 +1254,22 @@ int runLogitech(const std::vector<std::string>& a) {
             return 1;
         }
 
-        std::printf("Logitech %s solid -> %u,%u,%u\n",
-                    keyboardName.c_str(),
-                    static_cast<unsigned>(r),
-                    static_cast<unsigned>(g),
-                    static_cast<unsigned>(b));
+        if(const auto* geometry = inferDeviceGeometry()) {
+            std::printf("Logitech %s solid -> %u,%u,%u"
+                        " (0x8080 physical=%zu geometry=%s)\n",
+                        keyboardName.c_str(),
+                        static_cast<unsigned>(r),
+                        static_cast<unsigned>(g),
+                        static_cast<unsigned>(b),
+                        logitech::g610_g810::physicalLightingCount(*geometry),
+                        geometry->name);
+        } else {
+            std::printf("Logitech %s solid -> %u,%u,%u\n",
+                        keyboardName.c_str(),
+                        static_cast<unsigned>(r),
+                        static_cast<unsigned>(g),
+                        static_cast<unsigned>(b));
+        }
         return 0;
     }
 
