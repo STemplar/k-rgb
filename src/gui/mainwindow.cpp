@@ -703,15 +703,16 @@ void MainWindow::refreshKeyboardZoneEditor() {
     while(QLayoutItem* item = keyboardZoneRow_->takeAt(0)) {
         if(QWidget* widget = item->widget()) {
             widget->deleteLater();
-        }
-        if(QLayout* layout = item->layout()) {
+        } else if(QLayout* layout = item->layout()) {
+            // A QLayout is itself the QLayoutItem returned by takeAt().
+            // Deleting both layout and item double-frees the same object and
+            // crashed on the second refresh of the Logitech zone editor.
             while(QLayoutItem* child = layout->takeAt(0)) {
                 if(QWidget* widget = child->widget()) {
                     widget->deleteLater();
                 }
                 delete child;
             }
-            delete layout;
         }
         delete item;
     }
