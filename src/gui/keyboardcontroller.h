@@ -38,6 +38,16 @@ public:
                (backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_);
     }
     bool    supportsStaticRainbow() const { return supportsPerKeyColors(); }
+    bool    supportsEffectMode(int modeValue) const {
+        if(backend_ == Backend::Alienware) {
+            return true;
+        }
+        if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
+            const auto mode = static_cast<krgb::Mode>(modeValue);
+            return mode == krgb::Mode::Breathing || mode == krgb::Mode::Spectrum;
+        }
+        return false;
+    }
     bool    usesLogitechG810Iso105VisualLayout() const {
         return backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_;
     }
