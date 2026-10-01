@@ -14,6 +14,7 @@ class QHBoxLayout;
 class QMenu;
 class QPushButton;
 class QSlider;
+class QSpinBox;
 class QTabWidget;
 class QWidget;
 class KColorButton;
@@ -105,6 +106,9 @@ private:
     KColorButton* colorButton_      = nullptr;
     QComboBox*    modeCombo_        = nullptr;
     QComboBox*    speedCombo_       = nullptr;
+    QSpinBox*     effectPeriodSpin_ = nullptr;
+    QLabel*       effectDefaultLabel_ = nullptr;
+    QPushButton*  effectDefaultsBtn_ = nullptr;
     QComboBox*    directionCombo_   = nullptr;
     QSlider*      brightnessSlider_ = nullptr;
     QLabel*       brightnessValue_  = nullptr;
