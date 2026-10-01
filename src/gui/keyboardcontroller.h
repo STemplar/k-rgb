@@ -67,7 +67,8 @@ public Q_SLOTS:
     bool applyPerKey(const QHash<QString, QColor>& keyColors, int brightnessPct);
     bool applyZones(const QHash<int, QColor>& zoneColors, int brightnessPct);
     bool applyEffect(int modeValue, int speedValue, int directionValue,
-                     const QColor& color, int brightnessPct);
+                     const QColor& color, int brightnessPct,
+                     int exactPeriodMs = 0);
     bool applyOff();
     void refresh();  // re-check device presence (called by poll timer)
 
