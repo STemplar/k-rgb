@@ -83,6 +83,23 @@ endpoint is accessible. `krgb-cli logitech info` prints the full enumerated
 feature table so captures and hardware reports can be compared without confusing
 feature IDs with runtime indexes.
 
+After enumeration, `krgb-cli logitech info` also performs read-only,
+feature-specific capability queries where the wire format is sufficiently
+documented. Current parsers cover device-reported type/name (`0x0005`),
+international keyboard layout (`0x4540`), keyboard-disable capabilities
+(`0x4521/0x4522`), reprogrammable-control tables (`0x1b00..0x1b04`),
+report rate (`0x8060/0x8061`), brightness v1 (`0x8040`), legacy and modern
+RGB effect topology (`0x8070/0x8071`), both per-key lighting families
+(`0x8080/0x8081`), and mode status v1 (`0x8090`). Feature presence remains
+authoritative even when k-rgb has no detailed parser yet; G-keys, M-keys, macro
+recording and onboard profiles are currently reported this way rather than
+guessed from the product ID.
+
+The HID++ layout value is a regional/country hint, not a complete drawing.
+Neither `0x4540` nor the per-key lighting features provide generic
+x/y/width/height key geometry, so LGS/resource geometry remains a separate
+fallback for the visual keyboard where available.
+
 The Logitech status labels distinguish evidence from implementation. **Hardware-
 verified** means tested on physical hardware in k-rgb; **capture-derived** means
 packet captures exist for that exact family but k-rgb has not verified the path
