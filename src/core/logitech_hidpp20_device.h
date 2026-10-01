@@ -23,6 +23,28 @@ struct LogitechHIDPP20FeatureInfo {
     std::uint8_t version = 0;
 };
 
+struct LogitechHIDPP20Feature {
+    std::uint16_t featureId = 0;
+    std::uint8_t index = 0;
+    std::uint8_t type = 0;
+    std::uint8_t version = 0;
+};
+
+struct LogitechHIDPP20Capabilities {
+    std::uint8_t protocolMajor = 0;
+    std::uint8_t protocolMinor = 0;
+    std::vector<LogitechHIDPP20Feature> features;
+
+    const LogitechHIDPP20Feature* findFeature(std::uint16_t featureId) const {
+        for(const auto& feature : features) {
+            if(feature.featureId == featureId) {
+                return &feature;
+            }
+        }
+        return nullptr;
+    }
+};
+
 struct LogitechHIDPP20FirmwareInfo {
     std::uint8_t entity = 0;
     std::uint8_t kind = 0xff; // 0=firmware, 1=bootloader, 2=hardware
@@ -132,9 +154,19 @@ public:
     static LogitechLightingColorCapability colorCapabilityForProductId(
         std::uint16_t productId);
 
-    // Probe the stable lighting feature IDs currently known to k-rgb. Runtime
-    // indices are always obtained through ROOT.getFeature(); they are never
-    // selected from the USB product ID.
+    // Enumerate the complete HID++ 2.0 Feature Set (0x0001). The returned list
+    // preserves every device-reported feature ID, runtime index, type/flags and
+    // version, including features unknown to k-rgb.
+    bool enumerateFeatures(std::vector<LogitechHIDPP20Feature>& features,
+                           std::string* err = nullptr);
+
+    // Build the runtime capability snapshot from HID++ protocol version plus
+    // full Feature Set enumeration.
+    bool getCapabilities(LogitechHIDPP20Capabilities& capabilities,
+                         std::string* err = nullptr);
+
+    // Extract lighting features currently understood by k-rgb from the fully
+    // enumerated Feature Set. Runtime indices are never selected by USB PID.
     bool getLightingFeatures(LogitechHIDPP20LightingFeatures& features,
                              std::string* err = nullptr);
 
@@ -205,12 +237,18 @@ private:
                        std::string* err);
     static bool parseHex(const std::string& value, int& out);
     bool probeKeyboard(std::string* err = nullptr);
+    bool ensureFeatureSet(std::string* err = nullptr);
+    bool getDiscoveredFeature(std::uint16_t featureId,
+                              LogitechHIDPP20FeatureInfo& info,
+                              std::string* err = nullptr);
     void normalizeLightingColor(std::uint8_t& r, std::uint8_t& g,
                                 std::uint8_t& b) const;
 
     int fd_ = -1;
     std::string path_;
     LogitechUsbIdentity usbIdentity_;
+    bool featureSetEnumerated_ = false;
+    std::vector<LogitechHIDPP20Feature> discoveredFeatures_;
 };
 
 } // namespace krgb
