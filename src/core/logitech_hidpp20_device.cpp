@@ -726,6 +726,119 @@ bool LogitechHIDPP20Device::getColorLed8070Info(
     return true;
 }
 
+bool LogitechHIDPP20Device::getColorLed8070NvConfig(
+    std::uint16_t capability,
+    LogitechHIDPP20ColorLedNvConfig& config,
+    std::string* err) {
+
+    config = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        return false;
+    }
+
+    const std::uint8_t params[2] = {
+        static_cast<std::uint8_t>(capability >> 8),
+        static_cast<std::uint8_t>(capability & 0xff),
+    };
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x04, params, sizeof(params),
+                       raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 9) {
+        if(err) *err = "HID++ 0x8070 GetNvConfig returned a short response";
+        return false;
+    }
+
+    config.capability =
+        (static_cast<std::uint16_t>(raw[4]) << 8) | raw[5];
+    config.state = raw[6];
+    config.param1 = raw[7];
+    config.param2 = raw[8];
+    return true;
+}
+
+bool LogitechHIDPP20Device::getColorLed8070EffectSettings(
+    std::uint8_t zoneIndex, std::uint8_t persistence,
+    LogitechHIDPP20ColorLedEffectSettings& settings,
+    std::string* err) {
+
+    settings = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        return false;
+    }
+
+    const std::uint8_t params[2] = {zoneIndex, persistence};
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x09, params, sizeof(params),
+                       raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 12) {
+        if(err) *err = "HID++ 0x8070 GetEffectSettings returned a short response";
+        return false;
+    }
+
+    settings.zoneIndex = raw[4];
+    settings.persistence = persistence;
+    settings.r = raw[5];
+    settings.g = raw[6];
+    settings.b = raw[7];
+    settings.periodMs =
+        (static_cast<std::uint16_t>(raw[8]) << 8) | raw[9];
+    settings.brightness = raw[10];
+    settings.effectParam = raw[11];
+    return true;
+}
+
+bool LogitechHIDPP20Device::getColorLed8070ZoneEffect(
+    std::uint8_t zoneIndex, std::uint8_t persistence,
+    LogitechHIDPP20ColorLedZoneEffectState& state,
+    std::string* err) {
+
+    state = {};
+    LogitechHIDPP20FeatureInfo feature;
+    if(!getDiscoveredFeature(kFeatureColorLedEffects, feature, err)) {
+        return false;
+    }
+    if(feature.index == 0) {
+        if(err) *err = "HID++ feature 0x8070 (Color LED Effects) is not supported";
+        return false;
+    }
+
+    const std::uint8_t params[2] = {zoneIndex, persistence};
+    RawReport raw{};
+    std::size_t rawSize = 0;
+    if(!requestLongRaw(feature.index, 0x0e, params, sizeof(params),
+                       raw, rawSize, err)) {
+        return false;
+    }
+    if(rawSize < 16) {
+        if(err) *err = "HID++ 0x8070 GetZoneEffect returned a short response";
+        return false;
+    }
+
+    state.zoneIndex = raw[4];
+    state.persistence = persistence;
+    state.effectIndex = raw[5];
+    for(std::size_t i = 0; i < state.params.size(); ++i) {
+        state.params[i] = raw[6 + i];
+    }
+    return true;
+}
+
 bool LogitechHIDPP20Device::getPerKey8081Info(
     LogitechHIDPP20PerKey8081Info& info, std::string* err) {
 
