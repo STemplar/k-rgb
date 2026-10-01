@@ -1226,26 +1226,21 @@ int runLogitech(const std::vector<std::string>& a) {
     std::printf("features : %zu (complete Feature Set enumeration)\n",
                 capabilities.features.size());
 
-    auto featureName = [](std::uint16_t id) -> const char* {
-        switch(id) {
-            case LogitechHIDPP20Device::kFeatureRoot: return "ROOT";
-            case LogitechHIDPP20Device::kFeatureSet: return "Feature Set";
-            case LogitechHIDPP20Device::kFeatureDeviceInformation: return "Device Information";
-            case LogitechHIDPP20Device::kFeatureBrightnessControl: return "Brightness Control";
-            case LogitechHIDPP20Device::kFeatureColorLedEffects: return "Color LED Effects";
-            case LogitechHIDPP20Device::kFeatureRgbEffects: return "RGB Effects";
-            case LogitechHIDPP20Device::kFeaturePerKeyLighting: return "Per Key Lighting";
-            case LogitechHIDPP20Device::kFeaturePerKeyLighting2: return "Per Key Lighting 2";
-            default: return "unknown";
-        }
-    };
     for(const auto& feature : capabilities.features) {
-        std::printf("  index 0x%02x  id 0x%04x  type 0x%02x  version %-3u  %s\n",
+        const auto* catalog =
+            logitechHIDPP20FeatureCatalogEntry(feature.featureId);
+        const std::string_view name = catalog
+            ? catalog->name : std::string_view{"Unknown"};
+        const std::string_view domain = catalog
+            ? logitechHIDPP20FeatureDomainName(catalog->domain)
+            : std::string_view{"unknown"};
+        std::printf("  index 0x%02x  id 0x%04x  type 0x%02x  version %-3u  %-10.*s %.*s\n",
                     static_cast<unsigned>(feature.index),
                     static_cast<unsigned>(feature.featureId),
                     static_cast<unsigned>(feature.type),
                     static_cast<unsigned>(feature.version),
-                    featureName(feature.featureId));
+                    static_cast<int>(domain.size()), domain.data(),
+                    static_cast<int>(name.size()), name.data());
     }
 
     std::vector<LogitechHIDPP20FirmwareInfo> fw;
@@ -1284,14 +1279,260 @@ int runLogitech(const std::vector<std::string>& a) {
         err.clear();
     }
 
+    std::printf("capabilities (read-only queries):\n");
+
     if(capabilities.findFeature(
-           LogitechHIDPP20Device::kFeatureColorLedEffects) != nullptr) {
-        std::uint8_t zones = 0;
-        if(dev.getColorLed8070ZoneCount(zones, &err)) {
-            std::printf("0x8070 zones                 : %u\n",
-                        static_cast<unsigned>(zones));
+           LogitechHIDPP20Device::kFeatureDeviceTypeAndName) != nullptr) {
+        LogitechHIDPP20DeviceTypeInfo info;
+        if(dev.getDeviceTypeAndName(info, &err)) {
+            const char* type = info.deviceType == 0 ? "keyboard" : "other";
+            std::printf("  0x0005 device type/name   : type=%u (%s), name=%s\n",
+                        static_cast<unsigned>(info.deviceType), type,
+                        info.name.empty() ? "-" : info.name.c_str());
+        } else {
+            std::printf("  0x0005 device type/name   : query failed (%s)\n", err.c_str());
+            err.clear();
         }
     }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureKeyboardInternationalLayouts) != nullptr) {
+        LogitechHIDPP20KeyboardLayoutInfo info;
+        if(dev.getKeyboardLayout(info, &err)) {
+            const char* family = "unknown";
+            switch(info.countryCode) {
+                case 1: family = "ANSI"; break;
+                case 3: case 7: family = "ISO/QWERTZ"; break;
+                case 4: family = "ISO/AZERTY"; break;
+                case 9: case 0x3e: family = "JIS"; break;
+                case 2: case 5: case 8: case 0x0b: case 0x0d:
+                case 0x0e: case 0x0f: case 0x16: case 0x1d:
+                case 0x21: case 0x24:
+                    family = "ISO/QWERTY"; break;
+            }
+            std::printf("  0x4540 keyboard layout    : country=0x%02x, family=%s\n",
+                        static_cast<unsigned>(info.countryCode), family);
+        } else {
+            std::printf("  0x4540 keyboard layout    : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    } else if(capabilities.findFeature(
+                  LogitechHIDPP20Device::kFeatureKeyboardLayout) != nullptr) {
+        std::printf("  0x4520 keyboard layout    : present; legacy wire format not guessed\n");
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureBrightnessControl) != nullptr) {
+        LogitechHIDPP20BrightnessInfo info;
+        if(dev.getBrightnessInfo(info, &err)) {
+            std::printf("  0x8040 brightness         : min=%u max=%u steps=%u caps=0x%02x",
+                        static_cast<unsigned>(info.minimum),
+                        static_cast<unsigned>(info.maximum),
+                        static_cast<unsigned>(info.steps),
+                        static_cast<unsigned>(info.capabilities));
+            if(info.hasCurrent) {
+                std::printf(" current=%u", static_cast<unsigned>(info.current));
+            }
+            std::printf("\n");
+        } else {
+            std::printf("  0x8040 brightness         : present; %s\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(LogitechHIDPP20Device::kFeatureDisableKeys) != nullptr ||
+       capabilities.findFeature(LogitechHIDPP20Device::kFeatureDisableKeysByUsage) != nullptr) {
+        LogitechHIDPP20DisableKeysInfo info;
+        if(dev.getDisableKeysInfo(info, &err)) {
+            std::printf("  keyboard disable          : fixed-cap=0x%02x",
+                        static_cast<unsigned>(info.disableableMask));
+            if(info.hasDisabledMask) {
+                std::printf(" active=0x%02x",
+                            static_cast<unsigned>(info.disabledMask));
+            }
+            if(info.maxDisabledUsages != 0) {
+                std::printf(" usage-capacity=%u",
+                            static_cast<unsigned>(info.maxDisabledUsages));
+            }
+            std::printf("\n");
+        } else {
+            std::printf("  keyboard disable          : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    bool hasReprog = false;
+    for(std::uint16_t id = 0x1b00; id <= 0x1b04; ++id) {
+        if(capabilities.findFeature(id) != nullptr) {
+            hasReprog = true;
+            break;
+        }
+    }
+    if(hasReprog) {
+        LogitechHIDPP20ControlsInfo info;
+        if(dev.getReprogrammableControls(info, &err)) {
+            std::printf("  0x%04x controls           : %zu controls\n",
+                        static_cast<unsigned>(info.featureId), info.controls.size());
+            for(std::size_t i = 0; i < info.controls.size(); ++i) {
+                const auto& control = info.controls[i];
+                std::printf("    [%zu] cid=0x%04x task=0x%04x flags=0x%04x"
+                            " pos=%u group=%u mask=0x%02x\n",
+                            i,
+                            static_cast<unsigned>(control.controlId),
+                            static_cast<unsigned>(control.taskId),
+                            static_cast<unsigned>(control.flags),
+                            static_cast<unsigned>(control.position),
+                            static_cast<unsigned>(control.group),
+                            static_cast<unsigned>(control.groupMask));
+            }
+        } else {
+            std::printf("  reprogrammable controls   : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureAdjustableReportRate) != nullptr ||
+       capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureExtendedAdjustableReportRate) != nullptr) {
+        LogitechHIDPP20ReportRateInfo info;
+        if(dev.getReportRateInfo(info, &err)) {
+            std::printf("  report rate               : supported-mask=0x%04x",
+                        static_cast<unsigned>(info.supportedMask));
+            if(info.hasCurrent) {
+                std::printf(" current=%u ms",
+                            static_cast<unsigned>(info.current));
+            }
+            std::printf("\n");
+        } else {
+            std::printf("  report rate               : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureColorLedEffects) != nullptr) {
+        LogitechHIDPP20ColorLedInfo info;
+        if(dev.getColorLed8070Info(info, &err)) {
+            std::printf("  0x8070 ColorLedEffects    : zones=%u nv=0x%04x ext=0x%04x\n",
+                        static_cast<unsigned>(info.zoneCount),
+                        static_cast<unsigned>(info.nvCapabilities),
+                        static_cast<unsigned>(info.extCapabilities));
+            for(const auto& zone : info.zones) {
+                std::printf("    zone %u location=0x%04x effects=%u persist=0x%02x\n",
+                            static_cast<unsigned>(zone.zoneIndex),
+                            static_cast<unsigned>(zone.location),
+                            static_cast<unsigned>(zone.effectCount),
+                            static_cast<unsigned>(zone.persistencyCapabilities));
+                for(const auto& effect : zone.effects) {
+                    std::printf("      effect %u id=0x%04x caps=0x%04x period=%u ms\n",
+                                static_cast<unsigned>(effect.effectIndex),
+                                static_cast<unsigned>(effect.effectId),
+                                static_cast<unsigned>(effect.capabilities),
+                                static_cast<unsigned>(effect.periodMs));
+                }
+            }
+        } else {
+            std::printf("  0x8070 ColorLedEffects    : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureRgbEffects) != nullptr) {
+        LogitechHIDPP20RgbEffectsInfo info;
+        if(dev.getRgbEffects8071Info(info, &err)) {
+            std::printf("  0x8071 RgbEffects         : clusters=%u nv=0x%04x ext=0x%04x multi=%u\n",
+                        static_cast<unsigned>(info.clusterCount),
+                        static_cast<unsigned>(info.nvCapabilities),
+                        static_cast<unsigned>(info.extCapabilities),
+                        static_cast<unsigned>(info.multiClusterEffectCount));
+            for(const auto& cluster : info.clusters) {
+                std::printf("    cluster %u location=0x%04x effects=%u"
+                            " display-persist=0x%02x effect-persist=%s multi-led=%s\n",
+                            static_cast<unsigned>(cluster.clusterIndex),
+                            static_cast<unsigned>(cluster.location),
+                            static_cast<unsigned>(cluster.effectCount),
+                            static_cast<unsigned>(cluster.displayPersistencyCapabilities),
+                            cluster.effectPersistency ? "yes" : "no",
+                            cluster.multiLedPattern ? "yes" : "no");
+                for(const auto& effect : cluster.effects) {
+                    std::printf("      effect %u id=0x%04x caps=0x%04x period=%u ms\n",
+                                static_cast<unsigned>(effect.effectIndex),
+                                static_cast<unsigned>(effect.effectId),
+                                static_cast<unsigned>(effect.capabilities),
+                                static_cast<unsigned>(effect.periodMs));
+                }
+            }
+        } else {
+            std::printf("  0x8071 RgbEffects         : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeaturePerKeyLighting) != nullptr) {
+        LogitechHIDPP20PerKeyInfo info;
+        if(dev.getPerKey8080Info(info, &err)) {
+            std::size_t addresses = 0;
+            for(const auto& type : info.types) addresses += type.colors.size();
+            std::printf("  0x8080 PerKeyLighting     : types=0x%04x keyTypes=%u"
+                        " max=%u addresses=%zu\n",
+                        static_cast<unsigned>(info.typeFlags),
+                        static_cast<unsigned>(info.keyTypeCount),
+                        static_cast<unsigned>(info.maxKeyCount),
+                        addresses);
+        } else {
+            std::printf("  0x8080 PerKeyLighting     : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeaturePerKeyLighting2) != nullptr) {
+        LogitechHIDPP20PerKey8081Info info;
+        if(dev.getPerKey8081Info(info, &err)) {
+            std::printf("  0x8081 PerKeyLighting2    : %zu populated RGB zones\n",
+                        info.zoneIds.size());
+            std::printf("    zones:");
+            for(const auto id : info.zoneIds) {
+                std::printf(" %u", static_cast<unsigned>(id));
+            }
+            std::printf("\n");
+        } else {
+            std::printf("  0x8081 PerKeyLighting2    : query failed (%s)\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureModeStatus) != nullptr) {
+        LogitechHIDPP20ModeStatusInfo info;
+        if(dev.getModeStatusInfo(info, &err)) {
+            std::printf("  0x8090 ModeStatus         : status=%02x/%02x caps=0x%04x\n",
+                        static_cast<unsigned>(info.status0),
+                        static_cast<unsigned>(info.status1),
+                        static_cast<unsigned>(info.capabilities));
+        } else {
+            std::printf("  0x8090 ModeStatus         : present; %s\n", err.c_str());
+            err.clear();
+        }
+    }
+
+    for(const auto featureId : {
+            LogitechHIDPP20Device::kFeatureGamingGKeys,
+            LogitechHIDPP20Device::kFeatureGamingMKeys,
+            LogitechHIDPP20Device::kFeatureMacroRecord,
+            LogitechHIDPP20Device::kFeatureOnboardProfiles}) {
+        if(capabilities.findFeature(featureId) != nullptr) {
+            const auto name = logitechHIDPP20FeatureName(featureId);
+            std::printf("  0x%04x %-21.*s: present (capability from Feature Set;"
+                        " detailed read parser pending)\n",
+                        static_cast<unsigned>(featureId),
+                        static_cast<int>(name.size()), name.data());
+        }
+    }
+
     return 0;
 }
 
