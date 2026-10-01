@@ -1215,15 +1215,38 @@ int runLogitech(const std::vector<std::string>& a) {
         }
     }
 
-    std::uint8_t major = 0;
-    std::uint8_t minor = 0;
-    if(!dev.getProtocolVersion(major, minor, &err)) {
+    LogitechHIDPP20Capabilities capabilities;
+    if(!dev.getCapabilities(capabilities, &err)) {
         std::fprintf(stderr, "error: %s\n", err.c_str());
         return 1;
     }
     std::printf("HID++    : %u.%u\n",
-                static_cast<unsigned>(major),
-                static_cast<unsigned>(minor));
+                static_cast<unsigned>(capabilities.protocolMajor),
+                static_cast<unsigned>(capabilities.protocolMinor));
+    std::printf("features : %zu (complete Feature Set enumeration)\n",
+                capabilities.features.size());
+
+    auto featureName = [](std::uint16_t id) -> const char* {
+        switch(id) {
+            case LogitechHIDPP20Device::kFeatureRoot: return "ROOT";
+            case LogitechHIDPP20Device::kFeatureSet: return "Feature Set";
+            case LogitechHIDPP20Device::kFeatureDeviceInformation: return "Device Information";
+            case LogitechHIDPP20Device::kFeatureBrightnessControl: return "Brightness Control";
+            case LogitechHIDPP20Device::kFeatureColorLedEffects: return "Color LED Effects";
+            case LogitechHIDPP20Device::kFeatureRgbEffects: return "RGB Effects";
+            case LogitechHIDPP20Device::kFeaturePerKeyLighting: return "Per Key Lighting";
+            case LogitechHIDPP20Device::kFeaturePerKeyLighting2: return "Per Key Lighting 2";
+            default: return "unknown";
+        }
+    };
+    for(const auto& feature : capabilities.features) {
+        std::printf("  index 0x%02x  id 0x%04x  type 0x%02x  version %-3u  %s\n",
+                    static_cast<unsigned>(feature.index),
+                    static_cast<unsigned>(feature.featureId),
+                    static_cast<unsigned>(feature.type),
+                    static_cast<unsigned>(feature.version),
+                    featureName(feature.featureId));
+    }
 
     std::vector<LogitechHIDPP20FirmwareInfo> fw;
     if(dev.getFirmwareInfo(fw, &err)) {
@@ -1261,40 +1284,8 @@ int runLogitech(const std::vector<std::string>& a) {
         err.clear();
     }
 
-    struct FeatureProbe {
-        std::uint16_t id;
-        const char* name;
-    };
-    const FeatureProbe probes[] = {
-        {LogitechHIDPP20Device::kFeatureBrightnessControl, "Brightness Control"},
-        {LogitechHIDPP20Device::kFeatureColorLedEffects, "Color LED Effects"},
-        {LogitechHIDPP20Device::kFeatureRgbEffects, "RGB Effects"},
-        {LogitechHIDPP20Device::kFeaturePerKeyLighting, "Per Key Lighting"},
-        {LogitechHIDPP20Device::kFeaturePerKeyLighting2, "Per Key Lighting 2"},
-    };
-
-    for(const auto& probe : probes) {
-        LogitechHIDPP20FeatureInfo info;
-        if(!dev.getFeature(probe.id, info, &err)) {
-            std::fprintf(stderr, "error: feature 0x%04x probe failed: %s\n",
-                         static_cast<unsigned>(probe.id), err.c_str());
-            return 1;
-        }
-        if(info.index == 0) {
-            std::printf("0x%04x %-20s : unsupported\n",
-                        static_cast<unsigned>(probe.id), probe.name);
-        } else {
-            std::printf("0x%04x %-20s : index 0x%02x, type 0x%02x, version %u\n",
-                        static_cast<unsigned>(probe.id), probe.name,
-                        static_cast<unsigned>(info.index),
-                        static_cast<unsigned>(info.type),
-                        static_cast<unsigned>(info.version));
-        }
-    }
-
-    LogitechHIDPP20FeatureInfo zoneFeature;
-    if(dev.getFeature(LogitechHIDPP20Device::kFeatureColorLedEffects,
-                      zoneFeature, &err) && zoneFeature.index != 0) {
+    if(capabilities.findFeature(
+           LogitechHIDPP20Device::kFeatureColorLedEffects) != nullptr) {
         std::uint8_t zones = 0;
         if(dev.getColorLed8070ZoneCount(zones, &err)) {
             std::printf("0x8070 zones                 : %u\n",
