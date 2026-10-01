@@ -310,7 +310,6 @@ QWidget* MainWindow::buildKeyboardPage() {
     keyboardZonePanel_->setVisible(false);
     v->addWidget(keyboardZonePanel_);
 
-    refreshKeyboardZoneEditor();
     v->addStretch();
 
     auto* buttons = new QHBoxLayout();
@@ -703,16 +702,6 @@ void MainWindow::refreshKeyboardZoneEditor() {
     while(QLayoutItem* item = keyboardZoneRow_->takeAt(0)) {
         if(QWidget* widget = item->widget()) {
             widget->deleteLater();
-        } else if(QLayout* layout = item->layout()) {
-            // A QLayout is itself the QLayoutItem returned by takeAt().
-            // Deleting both layout and item double-frees the same object and
-            // crashed on the second refresh of the Logitech zone editor.
-            while(QLayoutItem* child = layout->takeAt(0)) {
-                if(QWidget* widget = child->widget()) {
-                    widget->deleteLater();
-                }
-                delete child;
-            }
         }
         delete item;
     }
@@ -720,17 +709,19 @@ void MainWindow::refreshKeyboardZoneEditor() {
     const LightingSettings saved = LightingSettings::load(Profiles::current());
     const int count = controller_->supportsZoneColors() ? controller_->zoneCount() : 0;
     for(int zone = 0; zone < count; ++zone) {
-        auto* column = new QVBoxLayout();
-        auto* label = new QLabel(i18n("Zone %1", zone + 1), keyboardZonePanel_);
+        auto* columnWidget = new QWidget(keyboardZonePanel_);
+        auto* column = new QVBoxLayout(columnWidget);
+        column->setContentsMargins(0, 0, 0, 0);
+        auto* label = new QLabel(i18n("Zone %1", zone + 1), columnWidget);
         label->setAlignment(Qt::AlignHCenter);
         auto* button = new KColorButton(
             saved.keyboardZoneColors.value(zone, QColor(0, 170, 255)),
-            keyboardZonePanel_);
+            columnWidget);
         button->setToolTip(i18n("Colour for keyboard zone %1", zone + 1));
         keyboardZoneButtons_.push_back(button);
         column->addWidget(label);
         column->addWidget(button);
-        keyboardZoneRow_->addLayout(column);
+        keyboardZoneRow_->addWidget(columnWidget);
 
         connect(button, &KColorButton::changed, this, [this]() {
             if(loading_ || !controller_->isConnected()) {
