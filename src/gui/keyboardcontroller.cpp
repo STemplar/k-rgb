@@ -417,7 +417,8 @@ bool KeyboardController::applyZones(
 }
 
 bool KeyboardController::applyEffect(int modeValue, int speedValue, int directionValue,
-                                     const QColor& color, int brightnessPct) {
+                                     const QColor& color, int brightnessPct,
+                                     int exactPeriodMs) {
     if(!ensureOpen()) {
         return false;
     }
@@ -450,10 +451,15 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
         }
 
         std::uint16_t periodMs = 5000;
-        switch(static_cast<Speed>(speedValue)) {
-            case Speed::Slowest: periodMs = 10000; break;
-            case Speed::Normal:  periodMs = 5000;  break;
-            case Speed::Fastest: periodMs = 2000;  break;
+        if(exactPeriodMs > 0) {
+            periodMs = static_cast<std::uint16_t>(
+                qBound(1, exactPeriodMs, 65535));
+        } else {
+            switch(static_cast<Speed>(speedValue)) {
+                case Speed::Slowest: periodMs = 10000; break;
+                case Speed::Normal:  periodMs = 5000;  break;
+                case Speed::Fastest: periodMs = 2000;  break;
+            }
         }
 
         const QColor c = scaled(color, brightnessPct);
