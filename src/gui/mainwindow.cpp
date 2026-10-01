@@ -185,21 +185,37 @@ void MainWindow::buildUi() {
     auto* outer = new QVBoxLayout(central);
 
     // --- Profile bar (shared across tabs) ----------------------------------
-    auto* profileRow = new QHBoxLayout();
-    profileRow->addWidget(new QLabel(i18n("Profile:"), central));
-    profileCombo_ = new QComboBox(central);
+    // Use a form row like the keyboard controls below.  Keeping the label in
+    // its own form-label cell avoids the profile label/combobox overlap seen
+    // with some Qt/KDE style metrics.
+    auto* profileForm = new QFormLayout();
+    profileForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    profileForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    auto* profileControls = new QWidget(central);
+    auto* profileRow = new QHBoxLayout(profileControls);
+    profileRow->setContentsMargins(0, 0, 0, 0);
+    profileRow->setSpacing(6);
+
+    profileCombo_ = new QComboBox(profileControls);
     profileCombo_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     profileRow->addWidget(profileCombo_, 1);
-    newProfileBtn_ = new QPushButton(QIcon::fromTheme(QStringLiteral("list-add")), QString(), central);
+
+    newProfileBtn_ = new QPushButton(
+        QIcon::fromTheme(QStringLiteral("list-add")), QString(), profileControls);
     newProfileBtn_->setToolTip(i18n("New profile"));
-    renameProfileBtn_ = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-rename")), QString(), central);
+    renameProfileBtn_ = new QPushButton(
+        QIcon::fromTheme(QStringLiteral("edit-rename")), QString(), profileControls);
     renameProfileBtn_->setToolTip(i18n("Rename profile"));
-    deleteProfileBtn_ = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-delete")), QString(), central);
+    deleteProfileBtn_ = new QPushButton(
+        QIcon::fromTheme(QStringLiteral("edit-delete")), QString(), profileControls);
     deleteProfileBtn_->setToolTip(i18n("Delete profile"));
     profileRow->addWidget(newProfileBtn_);
     profileRow->addWidget(renameProfileBtn_);
     profileRow->addWidget(deleteProfileBtn_);
-    outer->addLayout(profileRow);
+
+    profileForm->addRow(i18n("Profile:"), profileControls);
+    outer->addLayout(profileForm);
 
     // --- Tabs --------------------------------------------------------------
     tabs_ = new QTabWidget(central);
