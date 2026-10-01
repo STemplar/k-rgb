@@ -820,9 +820,23 @@ void MainWindow::onModeChanged() {
         (m.zones && zoned) ||
         (effectMode && (advanced || controller_->supportsEffectMode(m.value)));
 
-    colorButton_->setEnabled(supported && m.usesColor);
-    speedCombo_->setEnabled(supported && m.usesSpeed);
-    directionCombo_->setEnabled(supported && m.usesDirection);
+    bool usesColor = m.usesColor;
+    bool usesSpeed = m.usesSpeed;
+    bool usesDirection = m.usesDirection;
+
+    // G810 0x0005 Starlight exposes two RGB triplets but no period/direction
+    // parameter in the documented x8070 definition. The current mapping uses
+    // the selected GUI colour for the stars against a black sky.
+    if(controller_->usesLogitechG810Iso105VisualLayout() &&
+       static_cast<Mode>(m.value) == Mode::Scanner) {
+        usesColor = true;
+        usesSpeed = false;
+        usesDirection = false;
+    }
+
+    colorButton_->setEnabled(supported && usesColor);
+    speedCombo_->setEnabled(supported && usesSpeed);
+    directionCombo_->setEnabled(supported && usesDirection);
     applyButton_->setEnabled(controller_->isConnected() && supported);
 
     perKeyPanel_->setVisible(perKey && m.perkey);
@@ -1020,6 +1034,24 @@ QString MainWindow::trayAutostartFilePath() const {
 }
 
 void MainWindow::onConnectionChanged(bool connected, const QString& path) {
+    const bool g810Iso105 =
+        connected && controller_->usesLogitechG810Iso105VisualLayout();
+
+    // The shared mode table uses the historical Alienware names. Present the
+    // protocol-native Logitech 0x8070 names on the G810 instead, and mark the
+    // newly exposed mappings experimental until their exact LGS presets have
+    // been captured/verified.
+    for(int i = 0; i < modes_.size(); ++i) {
+        const auto mode = static_cast<Mode>(modes_.at(i).value);
+        if(g810Iso105 && mode == Mode::RainbowWave) {
+            modeCombo_->setItemText(i, i18n("Color Wave (experimental)"));
+        } else if(g810Iso105 && mode == Mode::Scanner) {
+            modeCombo_->setItemText(i, i18n("Starlight (experimental)"));
+        } else {
+            modeCombo_->setItemText(i, modes_.at(i).name);
+        }
+    }
+
     if(connected) {
         const QString model = controller_->modelName().isEmpty()
                                   ? i18n("Keyboard")
