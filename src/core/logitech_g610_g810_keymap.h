@@ -145,7 +145,8 @@ inline constexpr std::array<LightingElement, 105> kBaseKeyboardDefinitions = {{
 }};
 
 
-// Additional addresses used by the other physical G810 geometries.\ninline constexpr std::array<LightingElement, 8> kAdditionalKeyboardDefinitions = {{
+// Additional addresses used by the other physical G810 geometries.
+inline constexpr std::array<LightingElement, 8> kAdditionalKeyboardDefinitions = {{
     { kKeyboardKeyType, 0x31, "BACKSLASH", "\\ / |" },
     { kKeyboardKeyType, 0x87, "INTL1", "International 1" },
     { kKeyboardKeyType, 0x88, "INTL2", "International 2" },
