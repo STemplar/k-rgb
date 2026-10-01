@@ -1578,6 +1578,7 @@ bool LogitechHIDPP20Device::setColorLed8070Effect(
     normalizeLightingColor(r, g, b);
     intensity = static_cast<std::uint8_t>(std::min<unsigned>(intensity, 100u));
 
+    bool wroteAny = false;
     for(const auto& zone : info.zones) {
         const LogitechHIDPP20ColorLedEffectInfo* chosen = nullptr;
         for(const auto& effect : zone.effects) {
@@ -1586,16 +1587,13 @@ bool LogitechHIDPP20Device::setColorLed8070Effect(
                 break;
             }
         }
+
+        // Effects can legitimately be advertised on only part of a device.
+        // G810 wave/starlight are available on the primary keyboard zone but
+        // not on the separate logo zone. Apply to every zone that advertises
+        // the effect instead of rejecting the whole operation.
         if(!chosen) {
-            if(err) {
-                char buffer[96]{};
-                std::snprintf(buffer, sizeof(buffer),
-                              "HID++ 0x8070 zone %u does not advertise effect 0x%04x",
-                              static_cast<unsigned>(zone.zoneIndex),
-                              static_cast<unsigned>(effectId));
-                *err = buffer;
-            }
-            return false;
+            continue;
         }
 
         // x8070 SetZoneEffect:
@@ -1622,10 +1620,21 @@ bool LogitechHIDPP20Device::setColorLed8070Effect(
                 break;
 
             case 0x0004: // Color Wave
+                // Leave start/stop RGB at zero. On the G810 this selects the
+                // firmware's full-colour wave, matching the "all play"
+                // default from the 0x8070 effect definition.
                 params[8] = static_cast<std::uint8_t>(periodMs & 0xff);
                 params[9] = direction;
                 params[10] = intensity == 0 ? 1 : intensity;
                 params[11] = static_cast<std::uint8_t>(periodMs >> 8);
+                break;
+
+            case 0x0005: // Starlight
+                // param1..3 = sky RGB, param4..6 = star RGB.
+                // Use a black sky and the GUI-selected colour for the stars.
+                params[5] = r;
+                params[6] = g;
+                params[7] = b;
                 break;
 
             default:
@@ -1644,6 +1653,18 @@ bool LogitechHIDPP20Device::setColorLed8070Effect(
         if(!requestLong(fx.index, 0x03, params, sizeof(params), response, err)) {
             return false;
         }
+        wroteAny = true;
+    }
+
+    if(!wroteAny) {
+        if(err) {
+            char buffer[96]{};
+            std::snprintf(buffer, sizeof(buffer),
+                          "HID++ 0x8070 does not advertise effect 0x%04x on any zone",
+                          static_cast<unsigned>(effectId));
+            *err = buffer;
+        }
+        return false;
     }
 
     return true;
