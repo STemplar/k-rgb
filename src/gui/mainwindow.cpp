@@ -185,37 +185,33 @@ void MainWindow::buildUi() {
     auto* outer = new QVBoxLayout(central);
 
     // --- Profile bar (shared across tabs) ----------------------------------
-    // Use a form row like the keyboard controls below.  Keeping the label in
-    // its own form-label cell avoids the profile label/combobox overlap seen
-    // with some Qt/KDE style metrics.
-    auto* profileForm = new QFormLayout();
-    profileForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    profileForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-
-    auto* profileControls = new QWidget(central);
-    auto* profileRow = new QHBoxLayout(profileControls);
-    profileRow->setContentsMargins(0, 0, 0, 0);
+    // Keep this as a plain horizontal row.  On some Plasma/Breeze setups the
+    // form-label cell paints an opaque rectangle wider than its allocated
+    // column and covers the left side of the combo box.  The combo's tooltip
+    // and accessible name provide the label without introducing that overlap.
+    auto* profileRow = new QHBoxLayout();
     profileRow->setSpacing(6);
 
-    profileCombo_ = new QComboBox(profileControls);
+    profileCombo_ = new QComboBox(central);
+    profileCombo_->setAccessibleName(i18n("Profile"));
+    profileCombo_->setToolTip(i18n("Active lighting profile"));
     profileCombo_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     profileRow->addWidget(profileCombo_, 1);
 
     newProfileBtn_ = new QPushButton(
-        QIcon::fromTheme(QStringLiteral("list-add")), QString(), profileControls);
+        QIcon::fromTheme(QStringLiteral("list-add")), QString(), central);
     newProfileBtn_->setToolTip(i18n("New profile"));
     renameProfileBtn_ = new QPushButton(
-        QIcon::fromTheme(QStringLiteral("edit-rename")), QString(), profileControls);
+        QIcon::fromTheme(QStringLiteral("edit-rename")), QString(), central);
     renameProfileBtn_->setToolTip(i18n("Rename profile"));
     deleteProfileBtn_ = new QPushButton(
-        QIcon::fromTheme(QStringLiteral("edit-delete")), QString(), profileControls);
+        QIcon::fromTheme(QStringLiteral("edit-delete")), QString(), central);
     deleteProfileBtn_->setToolTip(i18n("Delete profile"));
     profileRow->addWidget(newProfileBtn_);
     profileRow->addWidget(renameProfileBtn_);
     profileRow->addWidget(deleteProfileBtn_);
 
-    profileForm->addRow(i18n("Profile:"), profileControls);
-    outer->addLayout(profileForm);
+    outer->addLayout(profileRow);
 
     // --- Tabs --------------------------------------------------------------
     tabs_ = new QTabWidget(central);
