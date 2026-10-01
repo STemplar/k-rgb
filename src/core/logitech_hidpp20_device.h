@@ -404,7 +404,7 @@ public:
 
     // Set every firmware lighting zone to one static colour through feature
     // 0x8070 (Color LED Effects). Zone count and the static-effect index are
-    // discovered at runtime; neither is assumed from the G810 captures.
+    // discovered at runtime rather than assumed from model-specific captures.
     bool setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                   std::string* err = nullptr);
 
@@ -425,8 +425,8 @@ public:
                             std::string* err = nullptr);
 
     // Stage a complete set of colours for one 0x8080 keyType in a single
-    // very-long frame, then FlushLEDs once. This is important for groups such
-    // as G810 status indicators: a partial frame can clear unstaged members.
+    // very-long frame, then FlushLEDs once. This is important for multi-element
+    // groups because a partial frame can clear unstaged members.
     bool setPerKey8080Colors(std::uint16_t keyType,
                              const std::vector<LogitechHIDPP20KeyColor>& colors,
                              std::string* err = nullptr);
