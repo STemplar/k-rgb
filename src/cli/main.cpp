@@ -3,7 +3,7 @@
 #include "core/alienfx_device.h"
 #include "core/keymap.h"
 #include "core/hid_lamp_array_device.h"
-#include "core/hid_keyboard_country.h"
+#include "core/logitech_keyboard_layout.h"
 #include "core/lightmount_device.h"
 #include "core/lightmount_effects.h"
 #include "core/lightmount_keymap.h"
@@ -1329,12 +1329,12 @@ int runLogitech(const std::vector<std::string>& a) {
            LogitechHIDPP20Device::kFeatureKeyboardInternationalLayouts) != nullptr) {
         LogitechHIDPP20KeyboardLayoutInfo info;
         if(dev.getKeyboardLayout(info, &err)) {
-            const char* country = hidKeyboardCountryName(info.countryCode);
-            if(hidKeyboardCountryCodeIsReserved(info.countryCode)) {
-                std::printf("  0x4540 keyboard layout    : country=%s (0x%02x)\n",
-                            country, static_cast<unsigned>(info.countryCode));
+            const char* layout = logitechKeyboardLayoutName(info.countryCode);
+            if(layout) {
+                std::printf("  0x4540 keyboard layout    : country=%s\n", layout);
             } else {
-                std::printf("  0x4540 keyboard layout    : country=%s\n", country);
+                std::printf("  0x4540 keyboard layout    : country=Unknown (0x%02x)\n",
+                            static_cast<unsigned>(info.countryCode));
             }
         } else {
             std::printf("  0x4540 keyboard layout    : query failed (%s)\n", err.c_str());

@@ -108,14 +108,15 @@ authoritative even when k-rgb has no detailed parser yet; G-keys, M-keys, macro
 recording and onboard profiles are currently reported this way rather than
 guessed from the product ID.
 
-The HID++ `0x4540` layout value is interpreted as the USB HID 1.11 keyboard
-`bCountryCode`: `krgb-cli logitech info` prints the corresponding country
-name (for example `Belgian` or `International (ISO)`) instead of inferring an
-ANSI/ISO/QWERTY family from the numeric value. The country value is a
-regional/localization hint, not a complete drawing. Neither `0x4540` nor the
-per-key lighting features provide generic x/y/width/height key geometry, so
-LGS/resource geometry remains a separate fallback for the visual keyboard where
-available.
+The HID++ `0x4540` layout value uses Logitech's own keyboard-layout country
+enumeration. Its values overlap enough with USB HID `bCountryCode` to look
+similar, but they are not the HID table: for example `0x02` is International,
+`0x0D` is Swiss and `0x11` is Belgian. `krgb-cli logitech info` prints the
+Logitech layout name and preserves the raw value only for unknown codes. The
+layout value is a regional/localization hint, not a complete drawing. Neither
+`0x4540` nor the per-key lighting features provide generic x/y/width/height key
+geometry, so LGS/resource geometry remains a separate fallback for the visual
+keyboard where available.
 
 The Logitech status labels distinguish evidence from implementation. **Hardware-
 verified** means tested on physical hardware in k-rgb; **capture-derived** means
