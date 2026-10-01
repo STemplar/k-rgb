@@ -1,5 +1,5 @@
-// Logitech G610/G810 shared physical lighting definitions plus provisional
-// G PRO (046d:c339) TKL geometries.
+// Logitech G610/G810 shared physical lighting definitions plus G PRO
+// (046d:c339) TKL geometries.
 //
 // Sources: Logitech Gaming Software G610/G810 SVG/XML resources and their
 // PerKeyLightingDefaults.txt files. G PRO TKL sets are inferred from the
@@ -243,8 +243,9 @@ struct KeyboardGeometry {
 };
 
 // Five unique physical key sets occur across the shipped G610/G810 SVG
-// resources. ANSI87/ISO88 are provisional G PRO TKL sets inferred by removing
-// the standard 17-key numeric keypad from the corresponding full-size set.
+// resources. G PRO ANSI87/ISO88 physical TKL forms are visually confirmed;
+// their HID++ key-ID sets remain inferred from the corresponding G610/G810
+// full-size address sets by removing the standard 17-key numeric keypad.
 inline constexpr std::array<KeyboardGeometry, 7> kGeometries = {{
     { "ANSI104",
       "G610_CHT/KOR/THAI/US + G810_CHT/THAI/US",
@@ -263,10 +264,10 @@ inline constexpr std::array<KeyboardGeometry, 7> kGeometries = {{
       "G610_INTL2/PIDC338_INTL/RU + G810_PIDC337_INTL",
       kIntl104Ids.data(), kIntl104Ids.size(), kModelG610G810 },
     { "ANSI87",
-      "G PRO c339 provisional: G610/G810 ANSI104 minus 17-key numpad",
+      "G PRO c339 ANSI87 visually confirmed; HID++ IDs inferred from ANSI104 minus numpad",
       kAnsi87TklIds.data(), kAnsi87TklIds.size(), kModelGPro },
     { "ISO88",
-      "G PRO c339 provisional: G610/G810 ISO105 minus 17-key numpad",
+      "G PRO c339 ISO88 visually confirmed; HID++ IDs inferred from ISO105 minus numpad",
       kIso88TklIds.data(), kIso88TklIds.size(), kModelGPro },
 }};
 
