@@ -1207,6 +1207,13 @@ int runLogitech(const std::vector<std::string>& a) {
             break;
     }
     std::printf("lighting : %s\n", colorCapability);
+    if(const auto* known = logitechKnownDeviceForProductId(dev.productId())) {
+        std::printf("evidence : %s\n",
+                    logitechProtocolEvidenceName(known->protocolEvidence));
+        if(known->evidenceNote && known->evidenceNote[0] != '\0') {
+            std::printf("source   : %s\n", known->evidenceNote);
+        }
+    }
 
     std::uint8_t major = 0;
     std::uint8_t minor = 0;
