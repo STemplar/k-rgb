@@ -438,6 +438,12 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
             case Mode::Spectrum:
                 effectId = 0x0003;
                 break;
+            case Mode::RainbowWave:
+                effectId = 0x0004;
+                break;
+            case Mode::Scanner:
+                effectId = 0x0005;
+                break;
             default:
                 Q_EMIT error(i18n("This hardware effect is not implemented for Logitech."));
                 return false;
