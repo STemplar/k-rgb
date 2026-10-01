@@ -1630,7 +1630,7 @@ bool LogitechHIDPP20Device::setPerKey8080Color(
     }
 
     // Function 3: SetKeyColors. Payload is keyType (BE16), count (BE16),
-    // then (keyId, R, G, B) tuples. G610/G810 use a 0x12 64-byte report.
+    // then (keyId, R, G, B) tuples in a 0x12 64-byte report.
     std::uint8_t payload[8] = {
         static_cast<std::uint8_t>(keyType >> 8),
         static_cast<std::uint8_t>(keyType & 0xff),
