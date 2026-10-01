@@ -138,6 +138,7 @@ QHash<QString, QColor> makeUsaFlag(bool logitechG810Iso105) {
 int g810LgsDefaultPeriodMs(Mode mode) {
     switch(mode) {
         case Mode::Breathing:   return 5000;
+        case Mode::Pulse:       return 150;   // LGS "Key Press" / echo rate
         case Mode::Spectrum:    return 10000; // LGS "Color Cycle"
         case Mode::RainbowWave: return 2000;  // LGS "Color Wave"
         default:                return 0;
@@ -152,6 +153,8 @@ QString g810LgsDefaultDescription(bool solid, Mode mode) {
     switch(mode) {
         case Mode::Breathing:
             return i18n("Colour #00dcff · period 5000 ms");
+        case Mode::Pulse:
+            return i18n("Foreground #00dcff · background #000000 · rate 150 ms");
         case Mode::Spectrum:
             return i18n("Period 10000 ms");
         case Mode::RainbowWave:
@@ -477,6 +480,10 @@ QWidget* MainWindow::buildKeyboardPage() {
                 case Mode::Breathing:
                     colorButton_->setColor(QColor(QStringLiteral("#00dcff")));
                     effectPeriodSpin_->setValue(5000);
+                    break;
+                case Mode::Pulse:
+                    colorButton_->setColor(QColor(QStringLiteral("#00dcff")));
+                    effectPeriodSpin_->setValue(150);
                     break;
                 case Mode::Spectrum:
                     effectPeriodSpin_->setValue(10000);
@@ -962,8 +969,10 @@ void MainWindow::onModeChanged() {
     const auto mode = static_cast<Mode>(m.value);
     const int lgsPeriod = g810 ? g810LgsDefaultPeriodMs(mode) : 0;
 
-    // G810 uses an exact millisecond period instead of the generic
-    // Slow/Normal/Fast abstraction. Star Effect has no x8070 period field.
+    // G810 uses an exact millisecond value instead of the generic
+    // Slow/Normal/Fast abstraction. For firmware effects this is the period;
+    // for the software Key Press effect it is the LGS echo rate. Star Effect
+    // has no x8070 period field.
     if(g810 && mode == Mode::Scanner) {
         usesColor = true;
         usesSpeed = false;
@@ -1198,7 +1207,9 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     for(int i = 0; i < modes_.size(); ++i) {
         const auto mode = static_cast<Mode>(modes_.at(i).value);
 
-        if(g810Iso105 && mode == Mode::Spectrum) {
+        if(g810Iso105 && mode == Mode::Pulse) {
+            modeCombo_->setItemText(i, i18n("Key Press"));
+        } else if(g810Iso105 && mode == Mode::Spectrum) {
             modeCombo_->setItemText(i, i18n("Color Cycle"));
         } else if(g810Iso105 && mode == Mode::RainbowWave) {
             modeCombo_->setItemText(i, i18n("Color Wave"));
@@ -1209,7 +1220,7 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
         }
 
         const bool hideForG810 =
-            g810Iso105 && (mode == Mode::Pulse || mode == Mode::SingleWave);
+            g810Iso105 && (mode == Mode::SingleWave);
         if(auto* listView = qobject_cast<QListView*>(modeCombo_->view())) {
             listView->setRowHidden(i, hideForG810);
         }
