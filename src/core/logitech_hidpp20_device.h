@@ -450,6 +450,16 @@ public:
     bool setColorLed8070Zones(const std::vector<LogitechHIDPP20ZoneColor>& colors,
                               std::string* err = nullptr);
 
+    // Set one firmware 0x8070 effect on every zone that advertises it.
+    // The effect index is resolved per zone from GetZoneEffectInfo; callers
+    // select by stable effect ID instead of assuming the same slot number.
+    bool setColorLed8070Effect(std::uint16_t effectId,
+                               std::uint8_t r, std::uint8_t g, std::uint8_t b,
+                               std::uint16_t periodMs,
+                               std::uint8_t intensity,
+                               std::uint8_t direction,
+                               std::string* err = nullptr);
+
     // Set one addressable element through feature 0x8080 (Per Key Lighting)
     // and commit the frame. keyType/keyId are protocol-level addresses; model
     // code is responsible for mapping physical keys/indicators to them.
