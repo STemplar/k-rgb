@@ -67,14 +67,21 @@ LEDs, so k-rgb collapses RGB input to a single intensity value. The G610 path
 has not yet been verified on physical G610 hardware.
 
 Logitech HID++ discovery is capability-based. k-rgb scans Logitech hidraw
-endpoints, verifies HID++ 2.0, and probes stable feature IDs such as `0x8040`,
-`0x8070`, `0x8071`, `0x8080`, and `0x8081`. For `0x8080`, the
-device-reported key-type bitmap/counts/IDs are authoritative. Known PIDs are
-used only for USB identity, udev permissions, optional geometry metadata, and
-properties that HID++ does not report (for example older monochrome-vs-RGB
-hardware). Unknown Logitech HID++ 2.0 lighting keyboards can therefore be
-identified and inspected without adding their PID to the protocol code first,
-provided the corresponding hidraw endpoint is accessible.
+endpoints, verifies HID++ 2.0, resolves Feature Set `0x0001` through ROOT and
+then enumerates the device's complete Feature Set. Every reported feature ID,
+runtime index, type/flags and version is retained, including features unknown to
+k-rgb. Known lighting features such as `0x8040`, `0x8070`, `0x8071`,
+`0x8080`, and `0x8081` are looked up in that runtime feature table rather
+than individually probed or assigned by USB PID. For `0x8080`, the
+device-reported key-type bitmap/counts/IDs remain authoritative.
+
+Known PIDs are used only for USB identity, udev permissions, optional geometry
+metadata, and properties or quirks that HID++ does not report. Unknown Logitech
+HID++ 2.0 lighting keyboards can therefore be identified and inspected without
+adding their PID to protocol code first, provided the corresponding hidraw
+endpoint is accessible. `krgb-cli logitech info` prints the full enumerated
+feature table so captures and hardware reports can be compared without confusing
+feature IDs with runtime indexes.
 
 The Logitech status labels distinguish evidence from implementation. **Hardware-
 verified** means tested on physical hardware in k-rgb; **capture-derived** means
