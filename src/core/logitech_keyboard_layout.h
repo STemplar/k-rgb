@@ -47,4 +47,56 @@ inline constexpr const char* logitechKeyboardLayoutName(std::uint8_t code) {
     }
 }
 
+// Physical/keycap family used to select the closest keyboard geometry.
+// This is intentionally separate from the Logitech country/layout name.
+// Hebrew (0x18) and Thai (0x33) are left unknown because their frame family
+// is not confirmed by the current evidence.
+inline constexpr const char* logitechKeyboardLayoutFamily(std::uint8_t code) {
+    switch(code) {
+        case 0x01: // US
+        case 0x09: // Korean
+        case 0x0B: // Chinese
+        case 0x3E: // Korean
+            return "ANSI";
+
+        case 0x02: // International
+        case 0x03: // UK
+        case 0x07: // Russian
+        case 0x08: // Nordic
+        case 0x0E: // Turkish
+        case 0x0F: // Spanish
+        case 0x10: // Arabic
+        case 0x16: // Nordic
+        case 0x1A: // Italian
+        case 0x1D: // Nordic
+        case 0x1F: // Portuguese
+        case 0x21: // Nordic
+        case 0x24: // Turkish
+        case 0x28: // Bulgarian
+        case 0x37: // International 2
+        case 0x3A: // Arabic
+            return "ISO/QWERTY";
+
+        case 0x04: // German
+        case 0x0D: // Swiss
+        case 0x14: // Czech
+        case 0x19: // Hungarian
+        case 0x41: // Czech
+            return "ISO/QWERTZ";
+
+        case 0x05: // French
+        case 0x11: // Belgian
+            return "ISO/AZERTY";
+
+        case 0x0A: // Japanese
+            return "JIS";
+
+        case 0x38: // Brazilian ABNT2
+            return "ABNT2";
+
+        default:
+            return nullptr;
+    }
+}
+
 } // namespace krgb

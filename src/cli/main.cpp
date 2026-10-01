@@ -1330,10 +1330,12 @@ int runLogitech(const std::vector<std::string>& a) {
         LogitechHIDPP20KeyboardLayoutInfo info;
         if(dev.getKeyboardLayout(info, &err)) {
             const char* layout = logitechKeyboardLayoutName(info.countryCode);
+            const char* family = logitechKeyboardLayoutFamily(info.countryCode);
             if(layout) {
-                std::printf("  0x4540 keyboard layout    : country=%s\n", layout);
+                std::printf("  0x4540 keyboard layout    : country=%s, family=%s\n",
+                            layout, family ? family : "unknown");
             } else {
-                std::printf("  0x4540 keyboard layout    : country=Unknown (0x%02x)\n",
+                std::printf("  0x4540 keyboard layout    : country=Unknown (0x%02x), family=unknown\n",
                             static_cast<unsigned>(info.countryCode));
             }
         } else {
