@@ -3,6 +3,7 @@
 #include "core/alienfx_device.h"
 #include "core/keymap.h"
 #include "core/hid_lamp_array_device.h"
+#include "core/hid_keyboard_country.h"
 #include "core/lightmount_device.h"
 #include "core/lightmount_effects.h"
 #include "core/lightmount_keymap.h"
@@ -1323,19 +1324,13 @@ int runLogitech(const std::vector<std::string>& a) {
            LogitechHIDPP20Device::kFeatureKeyboardInternationalLayouts) != nullptr) {
         LogitechHIDPP20KeyboardLayoutInfo info;
         if(dev.getKeyboardLayout(info, &err)) {
-            const char* family = "unknown";
-            switch(info.countryCode) {
-                case 1: family = "ANSI"; break;
-                case 3: case 7: family = "ISO/QWERTZ"; break;
-                case 4: family = "ISO/AZERTY"; break;
-                case 9: case 0x3e: family = "JIS"; break;
-                case 2: case 5: case 8: case 0x0b: case 0x0d:
-                case 0x0e: case 0x0f: case 0x16: case 0x1d:
-                case 0x21: case 0x24:
-                    family = "ISO/QWERTY"; break;
+            const char* country = hidKeyboardCountryName(info.countryCode);
+            if(hidKeyboardCountryCodeIsReserved(info.countryCode)) {
+                std::printf("  0x4540 keyboard layout    : country=%s (0x%02x)\n",
+                            country, static_cast<unsigned>(info.countryCode));
+            } else {
+                std::printf("  0x4540 keyboard layout    : country=%s\n", country);
             }
-            std::printf("  0x4540 keyboard layout    : country=0x%02x, family=%s\n",
-                        static_cast<unsigned>(info.countryCode), family);
         } else {
             std::printf("  0x4540 keyboard layout    : query failed (%s)\n", err.c_str());
             err.clear();

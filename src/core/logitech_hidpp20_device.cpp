@@ -438,9 +438,9 @@ bool LogitechHIDPP20Device::getKeyboardLayout(
     info = {};
 
     // 0x4540 has a documented read-only getter whose first response byte is
-    // the HID keyboard country code. Prefer it when present. 0x4520 is retained
-    // in the feature catalogue, but its version-dependent wire format is not
-    // guessed here.
+    // the HID keyboard country code. k-rgb interprets it using the USB HID 1.11
+    // bCountryCode table. Prefer it when present. 0x4520 is retained in the
+    // feature catalogue, but its version-dependent wire format is not guessed.
     LogitechHIDPP20FeatureInfo feature;
     if(!getDiscoveredFeature(kFeatureKeyboardInternationalLayouts, feature, err)) {
         return false;
