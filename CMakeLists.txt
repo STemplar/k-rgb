@@ -23,12 +23,25 @@ add_library(krgb-core STATIC
     src/core/hid_lamp_array_device.cpp
     src/core/logitech_hidpp20_device.cpp
     src/core/alienfx_device.cpp
+    src/core/device_diagnostics.cpp
+    src/core/device_diagnostics_builders.cpp
 )
 target_include_directories(krgb-core PUBLIC src)
 target_link_libraries(krgb-core PUBLIC Threads::Threads)
 
 # --- Test / scripting CLI ---------------------------------------------------
-add_executable(krgb-cli src/cli/main.cpp)
+# Keep the existing command implementation intact and route only the structured
+# info commands through a thin wrapper. This avoids duplicating the large set
+# of legacy/development commands while making GUI and CLI diagnostics share one
+# data model and formatter.
+add_library(krgb-cli-legacy OBJECT src/cli/main.cpp)
+target_compile_definitions(krgb-cli-legacy PRIVATE main=krgb_cli_legacy_main)
+target_link_libraries(krgb-cli-legacy PRIVATE krgb-core)
+
+add_executable(krgb-cli
+    src/cli/wrapper_main.cpp
+    $<TARGET_OBJECTS:krgb-cli-legacy>
+)
 target_link_libraries(krgb-cli PRIVATE krgb-core)
 install(TARGETS krgb-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
