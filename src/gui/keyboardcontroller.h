@@ -39,6 +39,7 @@ public:
     bool    supportsAdvancedModes() const { return backend_ == Backend::Alienware; }
     bool    supportsPerKeyColors() const {
         return backend_ == Backend::Alienware ||
+               backend_ == Backend::LightMount ||
                (backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_);
     }
     bool    supportsStaticRainbow() const { return supportsPerKeyColors(); }
@@ -51,7 +52,8 @@ public:
             return mode == krgb::Mode::Breathing ||
                    mode == krgb::Mode::Pulse ||       // IO Center Reactive
                    mode == krgb::Mode::Spectrum ||    // IO Center Tornado
-                   mode == krgb::Mode::RainbowWave || // IO Center Color Wave
+                   mode == krgb::Mode::SingleWave ||  // IO Center Color Wave, single colour
+                   mode == krgb::Mode::RainbowWave || // IO Center Color Wave, rainbow gradient
                    mode == krgb::Mode::Scanner;       // IO Center Matrix
         }
         if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
