@@ -12,6 +12,7 @@
 #include <QVector>
 
 #include "core/aw410k_device.h"
+#include "core/lightmount_device.h"
 #include "core/logitech_hidpp20_device.h"
 
 class QSocketNotifier;
@@ -23,6 +24,7 @@ class KeyboardController : public QObject {
     enum class Backend {
         None,
         Alienware,
+        LightMount,
         LogitechHIDPP20,
     };
 
@@ -44,6 +46,14 @@ public:
         if(backend_ == Backend::Alienware) {
             return true;
         }
+        if(backend_ == Backend::LightMount) {
+            const auto mode = static_cast<krgb::Mode>(modeValue);
+            return mode == krgb::Mode::Breathing ||
+                   mode == krgb::Mode::Pulse ||       // IO Center Reactive
+                   mode == krgb::Mode::Spectrum ||    // IO Center Tornado
+                   mode == krgb::Mode::RainbowWave || // IO Center Color Wave
+                   mode == krgb::Mode::Scanner;       // IO Center Matrix
+        }
         if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
             const auto mode = static_cast<krgb::Mode>(modeValue);
             return mode == krgb::Mode::Breathing ||
@@ -57,6 +67,7 @@ public:
     bool    usesLogitechG810Iso105VisualLayout() const {
         return backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_;
     }
+    bool    usesBeQuietLightMount() const { return backend_ == Backend::LightMount; }
     bool    supportsZoneColors() const {
         return backend_ == Backend::LogitechHIDPP20 && logitechZoneCount_ > 1;
     }
@@ -95,6 +106,7 @@ private:
     bool renderG810KeyPressFrame(bool includeStaticGroups = false);
 
     krgb::AW410KDevice device_;
+    krgb::LightMountDevice lightMountDevice_;
     krgb::LogitechHIDPP20Device logitechDevice_;
     Backend             backend_ = Backend::None;
     bool               connected_ = false;
