@@ -15,6 +15,7 @@ constexpr double kKeyInset = 2.0;   // px gap between adjacent keys
 const QColor     kUnset(45, 45, 48);
 const QColor     kBackground(28, 28, 30);
 const QColor     kSelect(80, 170, 255);
+constexpr quint8 kLightMountLayoutModelBit = 0xFE;
 
 // Friendlier glyphs for a few keys whose names are verbose.
 QString labelFor(const QString& name) {
@@ -67,9 +68,9 @@ QString labelFor(const QString& name) {
         {QStringLiteral("SCROLL_LED"), QStringLiteral("Scrl")},
         {QStringLiteral("NUM_LED"), QStringLiteral("Num")},
         {QStringLiteral("LOGO"), QStringLiteral("G")},
-        {QStringLiteral("MUTE"), QStringLiteral("\U0001f507")},
-        {QStringLiteral("VOLDN"), QStringLiteral("\U0001f509")},
-        {QStringLiteral("VOLUP"), QStringLiteral("\U0001f50a")},
+        {QStringLiteral("MUTE"), QStringLiteral("🔇")},
+        {QStringLiteral("VOLDN"), QStringLiteral("🔉")},
+        {QStringLiteral("VOLUP"), QStringLiteral("🔊")},
     };
     const auto it = pretty.constFind(name);
     if(it != pretty.constEnd()) {
@@ -130,6 +131,15 @@ void KeyboardWidget::setKeyColors(const QHash<QString, QColor>& colors) {
 }
 
 void KeyboardWidget::setModelBit(quint8 bit) {
+    // MainWindow historically passes only the Alienware model bit.  Reserve a
+    // private sentinel for the Light Mount so the same call can switch to the
+    // supplied US ANSI geometry without coupling MainWindow to that backend.
+    if(bit == kLightMountLayoutModelBit) {
+        modelBit_ = bit;
+        setLayoutKind(LayoutKind::BeQuietLightMountAnsi);
+        return;
+    }
+
     if(bit == modelBit_) {
         return;
     }
