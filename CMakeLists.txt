@@ -43,6 +43,11 @@ add_executable(krgb-cli
     $<TARGET_OBJECTS:krgb-cli-legacy>
 )
 target_link_libraries(krgb-cli PRIVATE krgb-core)
+# KDE places the GUI executable in build/bin. Keep the diagnostic CLI beside
+# it so DiagnoseWidget can launch the exact CLI from the same build tree.
+set_target_properties(krgb-cli PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
 install(TARGETS krgb-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # --- GUI: Qt6 + KF6 (opt-in) ------------------------------------------------
