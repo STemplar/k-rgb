@@ -1,8 +1,9 @@
-// Physical key mapping for the be quiet! Light Mount vendor RGB interface.
+// Physical RGB mapping for the be quiet! Light Mount vendor interface.
 //
-// Vendor LED IDs 46..157 form a row-major keyboard matrix. IDs 119, 126,
-// and 137 are unpopulated positions. Only M1..M5 are function-remappable;
-// every entry below is independently RGB-addressable.
+// LED 45 is the illuminated 3D Media Wheel. Vendor LED IDs 46..157 form the
+// row-major keyboard matrix; 119, 126 and 137 are unpopulated positions.
+// Only M1..M5 are function-remappable; every entry below is independently
+// RGB-addressable.
 #pragma once
 
 #include <array>
@@ -18,7 +19,9 @@ struct LightMountKey {
     bool remappable;        // Function remapping is available only on M1..M5.
 };
 
-inline constexpr std::array<LightMountKey, 109> kKeys = {{
+inline constexpr std::array<LightMountKey, 110> kKeys = {{
+    { 45, "MEDIA_WHEEL", "Mute",   false },
+
     { 46, "ESC",        "Esc",    false },
     { 47, "F1",         "F1",     false },
     { 48, "F2",         "F2",     false },
