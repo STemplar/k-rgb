@@ -84,8 +84,6 @@ QString labelFor(const QString& name) {
 }
 
 bool isBeQuietLayout(KeyboardWidget::LayoutKind kind) {
-    // Light Mount TKL and Dark Mount should use this same rendering policy when
-    // their physical layouts are added.
     return kind == KeyboardWidget::LayoutKind::BeQuietLightMountAnsi;
 }
 
@@ -224,9 +222,6 @@ void drawBeQuietSpaceMark(QPainter& painter, const QRectF& cell,
 QFont beQuietLegendFont(const QFont& base, const QRectF& cell,
                         const QString& text) {
     QFont font(base);
-    // The supplied Light Mount image uses a compact, medium-heavy sans-serif
-    // for all printed legends. Keep a deterministic Linux-friendly fallback
-    // stack while avoiding symbol/emoji fallback for ordinary key legends.
     font.setFamilies({QStringLiteral("Noto Sans"),
                       QStringLiteral("DejaVu Sans"),
                       QStringLiteral("sans-serif")});
@@ -236,8 +231,6 @@ QFont beQuietLegendFont(const QFont& base, const QRectF& cell,
     const qreal keySize = qMin(cell.width(), cell.height());
     font.setPixelSize(qBound(9, static_cast<int>(keySize * 0.32), 16));
 
-    // Preserve one size for primary+secondary glyphs within a legend, while
-    // allowing long legends such as "Scr Lk" to fit the physical keycap.
     while(font.pixelSize() > 8) {
         const QFontMetricsF fm(font);
         if(fm.horizontalAdvance(text) <= cell.width() * 0.84) {
@@ -249,8 +242,6 @@ QFont beQuietLegendFont(const QFont& base, const QRectF& cell,
 }
 
 QRectF beQuietLegendRect(const QRectF& cell) {
-    // On the supplied keyboard image the legends sit in the upper portion of
-    // each keycap rather than being vertically centred.
     const qreal keySize = qMin(cell.width(), cell.height());
     return QRectF(cell.left() + 1.5,
                   cell.top() + keySize * 0.10,
@@ -381,11 +372,6 @@ void KeyboardWidget::setLayoutKind(LayoutKind kind) {
 }
 
 void KeyboardWidget::setKeyColors(const QHash<QString, QColor>& colors) {
-    // The preset generators in MainWindow predate the be quiet! layouts and
-    // therefore use Alienware geometry for non-Logitech devices. Detect those
-    // two exact preset palettes and rebuild them against the active Light Mount
-    // physical geometry. This also means the corrected map is what gets sent to
-    // the hardware and saved in the profile.
     if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
         if(looksLikeUkrainePreset(colors)) {
             colors_ = lightMountUkrainePreset();
@@ -538,8 +524,13 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
             const qreal keySize = qMin(r.cell.width(), r.cell.height());
             BeQuietArrow arrow;
             if(dedicatedBeQuietCursor(r.name, arrow)) {
-                drawBeQuietTriangle(painter, r.cell.center(), keySize,
-                                    arrow, textColor, 0.42);
+                // The physical Light Mount cursor legends are small filled
+                // triangles printed in the upper-middle of each keycap rather
+                // than large symbols centred on the whole key.
+                const QPointF center(r.cell.center().x(),
+                                     r.cell.top() + r.cell.height() * 0.39);
+                drawBeQuietTriangle(painter, center, keySize,
+                                    arrow, textColor, 0.26);
                 continue;
             }
 
@@ -554,10 +545,6 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
                              Qt::AlignHCenter | Qt::AlignTop,
                              r.label);
 
-            // The supplied Light Mount image prints the numpad navigation
-            // glyphs separately near the bottom of 8/4/6/2 while keeping the
-            // number itself in the same upper legend position as the other
-            // numpad keys.
             if(numpadBeQuietCursor(r.name, arrow)) {
                 const QPointF center(r.cell.center().x(),
                                      r.cell.top() + r.cell.height() * 0.74);
