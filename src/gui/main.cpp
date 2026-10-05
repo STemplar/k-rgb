@@ -1,10 +1,12 @@
 #include "casecontroller.h"
+#include "diagnosewidget.h"
 #include "keyboardcontroller.h"
 #include "mainwindow.h"
 #include "settings.h"
 
 #include <QApplication>
 #include <QIcon>
+#include <QTabWidget>
 
 #include <KAboutData>
 #include <KDBusService>
@@ -44,6 +46,16 @@ int main(int argc, char** argv) {
     auto* controller = new KeyboardController(&app);
     auto* caseController = new CaseController(&app);
     auto* window = new MainWindow(controller, caseController);
+
+    // MainWindow owns the application's tab widget. Keep diagnostics as the
+    // second tab so device information is adjacent to the Keyboard controls,
+    // while the optional Case tab remains after it.
+    if(auto* tabs = window->findChild<QTabWidget*>()) {
+        tabs->insertTab(1,
+                        new DiagnoseWidget(controller, tabs),
+                        QIcon::fromTheme(QStringLiteral("dialog-information")),
+                        i18n("Diagnose"));
+    }
 
     QObject::connect(&service, &KDBusService::activateRequested, window,
                      [window](const QStringList&, const QString&) {
