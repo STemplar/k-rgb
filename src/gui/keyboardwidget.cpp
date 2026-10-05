@@ -11,14 +11,13 @@
 #include <QPaintEvent>
 
 namespace {
-constexpr double kMargin   = 6.0;   // px around the whole layout
-constexpr double kKeyInset = 2.0;   // px gap between adjacent keys
+constexpr double kMargin   = 6.0;
+constexpr double kKeyInset = 2.0;
 const QColor     kUnset(45, 45, 48);
 const QColor     kBackground(28, 28, 30);
 const QColor     kSelect(80, 170, 255);
 constexpr quint8 kLightMountLayoutModelBit = 0xFE;
 
-// Friendlier glyphs for a few keys whose names are verbose.
 QString labelFor(const QString& name) {
     static const QHash<QString, QString> pretty = {
         {QStringLiteral("BACKSPACE"), QStringLiteral("⌫")},
@@ -84,9 +83,8 @@ QString labelFor(const QString& name) {
 }
 
 bool isBeQuietLayout(KeyboardWidget::LayoutKind kind) {
-    // Keep all be quiet! family-specific typography/rendering in one place.
-    // Light Mount TKL and Dark Mount can join this helper when their layout
-    // kinds are added.
+    // Light Mount TKL and Dark Mount should use this same rendering policy when
+    // their physical layouts are added.
     return kind == KeyboardWidget::LayoutKind::BeQuietLightMountAnsi;
 }
 
@@ -106,7 +104,6 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
 
-    // Speaker shape, matching the simple white line icon printed on the wheel.
     QPainterPath speaker;
     speaker.moveTo(icon.left(), icon.center().y() - icon.height() * 0.16);
     speaker.lineTo(icon.left() + icon.width() * 0.22,
@@ -119,7 +116,6 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
     speaker.closeSubpath();
     painter.drawPath(speaker);
 
-    // Crossed sound mark used by the physical mute button.
     painter.drawLine(QPointF(icon.left() + icon.width() * 0.62,
                              icon.top() + icon.height() * 0.24),
                      QPointF(icon.right(),
@@ -129,6 +125,85 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
                      QPointF(icon.left() + icon.width() * 0.62,
                              icon.bottom() - icon.height() * 0.24));
     painter.restore();
+}
+
+bool looksLikeUkrainePreset(const QHash<QString, QColor>& colors) {
+    if(colors.size() < 50) {
+        return false;
+    }
+    const QColor blue(0, 87, 183);
+    const QColor yellow(255, 215, 0);
+    bool hasBlue = false;
+    bool hasYellow = false;
+    for(auto it = colors.cbegin(); it != colors.cend(); ++it) {
+        if(it.value() == blue) {
+            hasBlue = true;
+        } else if(it.value() == yellow) {
+            hasYellow = true;
+        } else {
+            return false;
+        }
+    }
+    return hasBlue && hasYellow;
+}
+
+bool looksLikeUsaPreset(const QHash<QString, QColor>& colors) {
+    if(colors.size() < 50) {
+        return false;
+    }
+    const QColor red(140, 22, 36);
+    const QColor white(255, 255, 255);
+    const QColor blue(28, 28, 75);
+    bool hasRed = false;
+    bool hasWhite = false;
+    bool hasBlue = false;
+    for(auto it = colors.cbegin(); it != colors.cend(); ++it) {
+        if(it.value() == red) {
+            hasRed = true;
+        } else if(it.value() == white) {
+            hasWhite = true;
+        } else if(it.value() == blue) {
+            hasBlue = true;
+        } else {
+            return false;
+        }
+    }
+    return hasRed && hasWhite && hasBlue;
+}
+
+QHash<QString, QColor> lightMountUkrainePreset() {
+    QHash<QString, QColor> result;
+    const QColor blue(0, 87, 183);
+    const QColor yellow(255, 215, 0);
+    const float mid = krgb::lightmount::ansi_visual::kLayoutHeight / 2.0f;
+    for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
+        const float cy = key.y + key.h / 2.0f;
+        result.insert(QString::fromLatin1(key.name), cy < mid ? blue : yellow);
+    }
+    return result;
+}
+
+QHash<QString, QColor> lightMountUsaPreset() {
+    QHash<QString, QColor> result;
+    const QColor red(140, 22, 36);
+    const QColor white(255, 255, 255);
+    const QColor blue(28, 28, 75);
+    const float blueRight = krgb::lightmount::ansi_visual::kLayoutWidth / 3.0f;
+    const float stripeHeight = krgb::lightmount::ansi_visual::kLayoutHeight / 8.0f;
+
+    for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
+        const float cx = key.x + key.w / 2.0f;
+        const float cy = key.y + key.h / 2.0f;
+        QColor color;
+        if(cx < blueRight) {
+            color = blue;
+        } else {
+            const int stripe = static_cast<int>(cy / stripeHeight);
+            color = (stripe % 2 == 0) ? red : white;
+        }
+        result.insert(QString::fromLatin1(key.name), color);
+    }
+    return result;
 }
 } // namespace
 
@@ -175,6 +250,23 @@ void KeyboardWidget::setLayoutKind(LayoutKind kind) {
 }
 
 void KeyboardWidget::setKeyColors(const QHash<QString, QColor>& colors) {
+    // The preset generators in MainWindow predate the be quiet! layouts and
+    // therefore use Alienware geometry for non-Logitech devices. Detect those
+    // two exact preset palettes and rebuild them against the active Light Mount
+    // physical geometry. This also means the corrected map is what gets sent to
+    // the hardware and saved in the profile.
+    if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        if(looksLikeUkrainePreset(colors)) {
+            colors_ = lightMountUkrainePreset();
+            update();
+            return;
+        }
+        if(looksLikeUsaPreset(colors)) {
+            colors_ = lightMountUsaPreset();
+            update();
+            return;
+        }
+    }
     colors_ = colors;
     update();
 }
@@ -185,7 +277,6 @@ void KeyboardWidget::setModelBit(quint8 bit) {
         setLayoutKind(LayoutKind::BeQuietLightMountAnsi);
         return;
     }
-
     if(bit == modelBit_) {
         return;
     }
@@ -203,13 +294,11 @@ QStringList KeyboardWidget::selectedKeys() const {
 
 void KeyboardWidget::recomputeLayout() {
     rects_.clear();
-
     const double sourceW = layoutWidth();
     const double sourceH = layoutHeight();
     const double availW = width() - 2 * kMargin;
     const double availH = height() - 2 * kMargin;
     const double unit = qMin(availW / sourceW, availH / sourceH);
-
     const double originX = (width() - unit * sourceW) / 2.0;
     const double originY = (height() - unit * sourceH) / 2.0;
 
@@ -218,9 +307,7 @@ void KeyboardWidget::recomputeLayout() {
         rects_.reserve(static_cast<int>(elements.size()));
         for(const auto& element : elements) {
             const auto* def = krgb::logitech::g810_iso105_visual::definition(element);
-            if(!def) {
-                continue;
-            }
+            if(!def) continue;
             const QRectF cell(originX + element.x * unit + kKeyInset / 2.0,
                               originY + element.y * unit + kKeyInset / 2.0,
                               qMax(1.0, element.w * unit - kKeyInset),
@@ -250,9 +337,7 @@ void KeyboardWidget::recomputeLayout() {
     rects_.reserve(static_cast<int>(krgb::kKeyCount));
     for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
         const krgb::KeyDef& k = krgb::kKeyMap[i];
-        if(!(k.models & modelBit_)) {
-            continue;
-        }
+        if(!(k.models & modelBit_)) continue;
         const QRectF cell(originX + k.x * unit + kKeyInset / 2.0,
                           originY + k.y * unit + kKeyInset / 2.0,
                           k.w * unit - kKeyInset,
@@ -271,9 +356,7 @@ const QString KeyboardWidget::keyAt(const QPointF& p) const {
             if(rx > 0.0 && ry > 0.0) {
                 const double dx = (p.x() - center.x()) / rx;
                 const double dy = (p.y() - center.y()) / ry;
-                if(dx * dx + dy * dy <= 1.0) {
-                    return r.name;
-                }
+                if(dx * dx + dy * dy <= 1.0) return r.name;
             }
         } else if(r.cell.contains(p)) {
             return r.name;
@@ -284,7 +367,6 @@ const QString KeyboardWidget::keyAt(const QPointF& p) const {
 
 void KeyboardWidget::paintEvent(QPaintEvent*) {
     recomputeLayout();
-
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::TextAntialiasing, true);
@@ -293,8 +375,6 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
     const bool beQuiet = isBeQuietLayout(layoutKind_);
     QFont beQuietFont = painter.font();
     if(beQuiet) {
-        // Use one font, one size and one centred legend string for all glyphs,
-        // matching the physical be quiet! keycap treatment.
         beQuietFont.setFamilies({QStringLiteral("Noto Sans"),
                                  QStringLiteral("DejaVu Sans"),
                                  QStringLiteral("sans-serif")});
@@ -304,7 +384,6 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
     for(const KeyRect& r : rects_) {
         const QColor fill = colors_.value(r.name, kUnset);
         const bool sel = selected_.contains(r.name);
-
         painter.setBrush(fill);
         painter.setPen(QPen(sel ? kSelect : QColor(0, 0, 0, 160), sel ? 2.0 : 1.0));
         if(r.round) {
@@ -324,21 +403,15 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         const double lum = 0.299 * fill.red() + 0.587 * fill.green() + 0.114 * fill.blue();
         const QColor textColor = lum > 140 ? QColor(20, 20, 20) : QColor(225, 225, 225);
         painter.setPen(textColor);
-
-        if(r.cell.width() < 10.0 || r.cell.height() < 8.0) {
-            continue;
-        }
+        if(r.cell.width() < 10.0 || r.cell.height() < 8.0) continue;
 
         if(beQuiet) {
             QFont font = beQuietFont;
             font.setPixelSize(qBound(9, static_cast<int>(r.cell.height() * 0.31), 15));
             painter.setFont(font);
-
             if(r.round) {
                 drawBeQuietMuteMark(painter, r.cell, textColor);
             } else {
-                // Combined primary+secondary legend, same font and size,
-                // centred as one unit just like the supplied keyboard image.
                 painter.drawText(r.cell.adjusted(2.0, 1.0, -2.0, -1.0),
                                  Qt::AlignCenter, r.label);
             }
@@ -352,26 +425,18 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
 }
 
 void KeyboardWidget::mousePressEvent(QMouseEvent* ev) {
-    if(ev->button() != Qt::LeftButton) {
-        return;
-    }
+    if(ev->button() != Qt::LeftButton) return;
     const bool additive = ev->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
     pressPos_ = ev->position();
     dragging_ = true;
     moved_ = false;
-
     const QString hit = keyAt(pressPos_);
     if(!additive) {
         selected_.clear();
-        if(!hit.isEmpty()) {
-            selected_.insert(hit);
-        }
+        if(!hit.isEmpty()) selected_.insert(hit);
     } else if(!hit.isEmpty()) {
-        if(selected_.contains(hit)) {
-            selected_.remove(hit);
-        } else {
-            selected_.insert(hit);
-        }
+        if(selected_.contains(hit)) selected_.remove(hit);
+        else selected_.insert(hit);
     }
     baseSelection_ = selected_;
     update();
@@ -379,66 +444,46 @@ void KeyboardWidget::mousePressEvent(QMouseEvent* ev) {
 }
 
 void KeyboardWidget::mouseMoveEvent(QMouseEvent* ev) {
-    if(!dragging_) {
-        return;
-    }
+    if(!dragging_) return;
     const QPointF p = ev->position();
-    if(!moved_ && (p - pressPos_).manhattanLength() < 4) {
-        return;
-    }
+    if(!moved_ && (p - pressPos_).manhattanLength() < 4) return;
     moved_ = true;
     rubber_ = QRectF(pressPos_, p).normalized();
-
     selected_ = baseSelection_;
     for(const KeyRect& r : rects_) {
-        if(rubber_.intersects(r.cell)) {
-            selected_.insert(r.name);
-        }
+        if(rubber_.intersects(r.cell)) selected_.insert(r.name);
     }
     update();
     Q_EMIT selectionChanged(selected_.size());
 }
 
 void KeyboardWidget::mouseReleaseEvent(QMouseEvent* ev) {
-    if(ev->button() != Qt::LeftButton) {
-        return;
-    }
+    if(ev->button() != Qt::LeftButton) return;
     dragging_ = false;
     rubber_ = QRectF();
     update();
 }
 
 void KeyboardWidget::paintSelection(const QColor& color) {
-    if(selected_.isEmpty() || !color.isValid()) {
-        return;
-    }
-    for(const QString& name : selected_) {
-        colors_.insert(name, color);
-    }
+    if(selected_.isEmpty() || !color.isValid()) return;
+    for(const QString& name : selected_) colors_.insert(name, color);
     update();
     Q_EMIT changed();
 }
 
 void KeyboardWidget::clearSelection() {
-    if(selected_.isEmpty()) {
-        return;
-    }
-    for(const QString& name : selected_) {
-        colors_.remove(name);
-    }
+    if(selected_.isEmpty()) return;
+    for(const QString& name : selected_) colors_.remove(name);
     update();
     Q_EMIT changed();
 }
 
 void KeyboardWidget::selectAll() {
     selected_.clear();
-
     if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
         for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
             const auto* def = krgb::logitech::g810_iso105_visual::definition(element);
-            if(def) {
-                selected_.insert(QString::fromLatin1(def->name));
-            }
+            if(def) selected_.insert(QString::fromLatin1(def->name));
         }
     } else if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
         for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
@@ -446,27 +491,20 @@ void KeyboardWidget::selectAll() {
         }
     } else {
         for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
-            if(krgb::kKeyMap[i].models & modelBit_) {
+            if(krgb::kKeyMap[i].models & modelBit_)
                 selected_.insert(QString::fromLatin1(krgb::kKeyMap[i].name));
-            }
         }
     }
-
     update();
     Q_EMIT selectionChanged(selected_.size());
 }
 
 void KeyboardWidget::fillAll(const QColor& color) {
-    if(!color.isValid()) {
-        return;
-    }
-
+    if(!color.isValid()) return;
     if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
         for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
             const auto* def = krgb::logitech::g810_iso105_visual::definition(element);
-            if(def) {
-                colors_.insert(QString::fromLatin1(def->name), color);
-            }
+            if(def) colors_.insert(QString::fromLatin1(def->name), color);
         }
     } else if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
         for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
@@ -474,12 +512,10 @@ void KeyboardWidget::fillAll(const QColor& color) {
         }
     } else {
         for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
-            if(krgb::kKeyMap[i].models & modelBit_) {
+            if(krgb::kKeyMap[i].models & modelBit_)
                 colors_.insert(QString::fromLatin1(krgb::kKeyMap[i].name), color);
-            }
         }
     }
-
     update();
     Q_EMIT changed();
 }
