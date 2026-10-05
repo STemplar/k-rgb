@@ -6,6 +6,7 @@
 #include "zonegridwidget.h"
 #include "core/aw410k_device.h"
 #include "core/keymap.h"
+#include "core/lightmount_ansi_visual.h"
 #include "core/logitech_g810_iso105_visual.h"
 
 #include <QActionGroup>
@@ -50,13 +51,11 @@ using krgb::Direction;
 namespace {
 
 // --- Per-key flag presets ---------------------------------------------------
-// Built from the physical key geometry in keymap.h so the bands line up with
-// where the keys actually sit on the board.
+// Build presets from the physical geometry of the active keyboard so every
+// generated key name can be sent back through the same backend.
 
-// Ukraine: blue top half, yellow bottom half (split across the layout height).
-// Generate from the active physical geometry so Logitech-only controls/media
-// are not left unassigned by an Alienware-only preset map.
-QHash<QString, QColor> makeUkraineFlag(bool logitechG810Iso105) {
+QHash<QString, QColor> makeUkraineFlag(bool logitechG810Iso105,
+                                       bool beQuietLightMount) {
     QHash<QString, QColor> m;
     const QColor blue(0, 87, 183);
     const QColor yellow(255, 215, 0);
@@ -76,6 +75,15 @@ QHash<QString, QColor> makeUkraineFlag(bool logitechG810Iso105) {
         return m;
     }
 
+    if(beQuietLightMount) {
+        const float mid = krgb::lightmount::ansi_visual::kLayoutHeight / 2.0f;
+        for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
+            const float cy = key.y + key.h / 2.0f;
+            m.insert(QString::fromLatin1(key.name), cy < mid ? blue : yellow);
+        }
+        return m;
+    }
+
     const float mid = krgb::kLayoutHeight / 2.0f;
     for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
         const krgb::KeyDef& k = krgb::kKeyMap[i];
@@ -85,9 +93,8 @@ QHash<QString, QColor> makeUkraineFlag(bool logitechG810Iso105) {
     return m;
 }
 
-// USA: solid blue over the left third (full height), red/white stripes by row
-// across the right two-thirds.
-QHash<QString, QColor> makeUsaFlag(bool logitechG810Iso105) {
+QHash<QString, QColor> makeUsaFlag(bool logitechG810Iso105,
+                                   bool beQuietLightMount) {
     QHash<QString, QColor> m;
     const QColor red(140, 22, 36);
     const QColor white(255, 255, 255);
@@ -114,6 +121,26 @@ QHash<QString, QColor> makeUsaFlag(bool logitechG810Iso105) {
                 color = (stripe % 2 == 0) ? red : white;
             }
             m.insert(QString::fromLatin1(def->name), color);
+        }
+        return m;
+    }
+
+    if(beQuietLightMount) {
+        const float blueRight =
+            krgb::lightmount::ansi_visual::kLayoutWidth / 3.0f;
+        const float stripeHeight =
+            krgb::lightmount::ansi_visual::kLayoutHeight / 8.0f;
+        for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
+            const float cx = key.x + key.w / 2.0f;
+            const float cy = key.y + key.h / 2.0f;
+            QColor color;
+            if(cx < blueRight) {
+                color = blue;
+            } else {
+                const int stripe = static_cast<int>(cy / stripeHeight);
+                color = (stripe % 2 == 0) ? red : white;
+            }
+            m.insert(QString::fromLatin1(key.name), color);
         }
         return m;
     }
@@ -396,12 +423,14 @@ QWidget* MainWindow::buildKeyboardPage() {
 
     connect(usaBtn, &QPushButton::clicked, this, [this] {
         keyboardWidget_->setKeyColors(
-            makeUsaFlag(controller_->usesLogitechG810Iso105VisualLayout()));
+            makeUsaFlag(controller_->usesLogitechG810Iso105VisualLayout(),
+                        controller_->usesBeQuietLightMount()));
         onPerKeyChanged();
     });
     connect(ukrBtn, &QPushButton::clicked, this, [this] {
         keyboardWidget_->setKeyColors(
-            makeUkraineFlag(controller_->usesLogitechG810Iso105VisualLayout()));
+            makeUkraineFlag(controller_->usesLogitechG810Iso105VisualLayout(),
+                            controller_->usesBeQuietLightMount()));
         onPerKeyChanged();
     });
 
@@ -689,16 +718,29 @@ void MainWindow::setupTray() {
 
     menu->addSeparator();
     QAction* showAction = menu->addAction(QIcon::fromTheme(QStringLiteral("settings-configure")),
-                                          i18n("Open k-rgb…"));
+                                          i18n("Open k-rgb"));
     connect(showAction, &QAction::triggered, this, [this] {
         show();
+        setWindowState(windowState() & ~Qt::WindowMinimized);
         raise();
         activateWindow();
     });
-    QAction* quitAction = menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), i18n("Quit"));
+    QAction* quitAction = menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")),
+                                          i18n("Quit"));
     connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
-
     tray_->setContextMenu(menu);
+}
+
+// --- Profile management -----------------------------------------------------
+
+void MainWindow::refreshProfileCombo() {
+    profileCombo_->blockSignals(true);
+    profileCombo_->clear();
+    profileCombo_->addItems(Profiles::names());
+    const int idx = profileCombo_->findText(Profiles::current());
+    profileCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
+    profileCombo_->blockSignals(false);
+    rebuildProfilesMenu();
 }
 
 void MainWindow::rebuildProfilesMenu() {
@@ -706,51 +748,32 @@ void MainWindow::rebuildProfilesMenu() {
         return;
     }
     profilesMenu_->clear();
-    delete profileGroup_;
-    profileGroup_ = new QActionGroup(this);
-    profileGroup_->setExclusive(true);
-
-    const QString cur = Profiles::current();
+    QActionGroup* group = new QActionGroup(profilesMenu_);
+    group->setExclusive(true);
     for(const QString& name : Profiles::names()) {
         QAction* a = profilesMenu_->addAction(name);
         a->setCheckable(true);
-        a->setChecked(name == cur);
-        profileGroup_->addAction(a);
+        a->setChecked(name == Profiles::current());
+        group->addAction(a);
         connect(a, &QAction::triggered, this, [this, name] {
-            // Route through the combo so window + tray stay in sync.
-            profileCombo_->setCurrentText(name);
+            switchToProfile(name, /*apply=*/true);
         });
     }
 }
 
-// --- Profile management -----------------------------------------------------
-
-void MainWindow::refreshProfileCombo() {
-    const bool wasLoading = loading_;
-    loading_ = true;
-    profileCombo_->clear();
-    profileCombo_->addItems(Profiles::names());
-    profileCombo_->setCurrentText(Profiles::current());
-    loading_ = wasLoading;
-    deleteProfileBtn_->setEnabled(Profiles::names().size() > 1);
-}
-
 void MainWindow::switchToProfile(const QString& name, bool apply) {
-    loading_ = true;
-    const LightingSettings s = LightingSettings::load(name);
-    loadProfileIntoUi(s);
-    Profiles::setCurrent(name);
-    loading_ = false;
-
-    if(apply) {
-        if(controller_->isConnected()) {
-            s.apply(*controller_, caseController_);
-        } else if(caseController_ && caseController_->isAvailable() && s.caseSet) {
-            caseController_->applySolid(s.caseColor);  // keyboard absent, case present
-        }
+    if(!Profiles::exists(name)) {
+        return;
     }
-    deleteProfileBtn_->setEnabled(Profiles::names().size() > 1);
-    rebuildProfilesMenu();
+    Profiles::setCurrent(name);
+    loading_ = true;
+    loadProfileIntoUi(LightingSettings::load(name));
+    loading_ = false;
+    if(apply && controller_->isConnected()) {
+        LightingSettings::load(name).apply(*controller_);
+    }
+    refreshProfileCombo();
+    onModeChanged();
 }
 
 void MainWindow::onProfileSelected(int index) {
@@ -762,40 +785,28 @@ void MainWindow::onProfileSelected(int index) {
 
 void MainWindow::onNewProfile() {
     bool ok = false;
-    const QString name = QInputDialog::getText(this, i18n("New Profile"),
-                                               i18n("Profile name:"), QLineEdit::Normal,
-                                               QString(), &ok).trimmed();
-    if(!ok || name.isEmpty()) {
+    const QString name = QInputDialog::getText(
+        this, i18n("New Profile"), i18n("Profile name:"), QLineEdit::Normal,
+        QString(), &ok).trimmed();
+    if(!ok || name.isEmpty() || Profiles::exists(name)) {
         return;
     }
-    if(Profiles::exists(name)) {
-        QMessageBox::warning(this, i18n("New Profile"),
-                             i18n("A profile named “%1” already exists.", name));
-        return;
-    }
-    Profiles::add(name, currentSettings());  // seed from current UI
+    Profiles::add(name, currentSettings());
     Profiles::setCurrent(name);
     refreshProfileCombo();
-    rebuildProfilesMenu();
 }
 
 void MainWindow::onRenameProfile() {
-    const QString from = Profiles::current();
+    const QString cur = Profiles::current();
     bool ok = false;
-    const QString to = QInputDialog::getText(this, i18n("Rename Profile"),
-                                             i18n("New name:"), QLineEdit::Normal,
-                                             from, &ok).trimmed();
-    if(!ok || to.isEmpty() || to == from) {
+    const QString name = QInputDialog::getText(
+        this, i18n("Rename Profile"), i18n("New name:"), QLineEdit::Normal,
+        cur, &ok).trimmed();
+    if(!ok || name.isEmpty() || name == cur || Profiles::exists(name)) {
         return;
     }
-    if(Profiles::exists(to)) {
-        QMessageBox::warning(this, i18n("Rename Profile"),
-                             i18n("A profile named “%1” already exists.", to));
-        return;
-    }
-    Profiles::rename(from, to);
+    Profiles::rename(cur, name);
     refreshProfileCombo();
-    rebuildProfilesMenu();
 }
 
 void MainWindow::onDeleteProfile() {
