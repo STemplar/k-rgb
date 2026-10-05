@@ -193,6 +193,11 @@ QString g810LgsDefaultDescription(bool solid, Mode mode) {
     }
 }
 
+int lightMountBrightnessStep(int value) {
+    const int bounded = qBound(10, value, 100);
+    return qBound(10, ((bounded + 5) / 10) * 10, 100);
+}
+
 } // namespace
 
 MainWindow::MainWindow(KeyboardController* controller, CaseController* caseController, QWidget* parent)
@@ -244,11 +249,6 @@ void MainWindow::buildUi() {
     auto* central = new QWidget(this);
     auto* outer = new QVBoxLayout(central);
 
-    // --- Profile bar (shared across tabs) ----------------------------------
-    // Keep this as a plain horizontal row.  On some Plasma/Breeze setups the
-    // form-label cell paints an opaque rectangle wider than its allocated
-    // column and covers the left side of the combo box.  The combo's tooltip
-    // and accessible name provide the label without introducing that overlap.
     auto* profileRow = new QHBoxLayout();
     profileRow->setSpacing(6);
 
@@ -273,13 +273,11 @@ void MainWindow::buildUi() {
 
     outer->addLayout(profileRow);
 
-    // --- Tabs --------------------------------------------------------------
     tabs_ = new QTabWidget(central);
     tabs_->addTab(buildKeyboardPage(), QIcon::fromTheme(QStringLiteral("input-keyboard")), i18n("Keyboard"));
-    casePage_ = buildCasePage();  // added to the tab bar only when a controller is present
+    casePage_ = buildCasePage();
     outer->addWidget(tabs_, 1);
 
-    // --- Login options (shared) --------------------------------------------
     autostartCheck_ = new QCheckBox(i18n("Restore lighting at login"), central);
     autostartCheck_->setChecked(QFile::exists(autostartFilePath()));
     autostartCheck_->setToolTip(i18n("Re-apply the active profile's lighting when you log in."));
@@ -298,7 +296,6 @@ void MainWindow::buildUi() {
     statusLabel_->setTextFormat(Qt::RichText);
     statusBar()->addPermanentWidget(statusLabel_);
 
-    // --- Shared connections ------------------------------------------------
     connect(autostartCheck_, &QCheckBox::toggled, this, &MainWindow::onAutostartToggled);
     connect(trayAutostartCheck_, &QCheckBox::toggled, this, &MainWindow::onTrayAutostartToggled);
     connect(profileCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onProfileSelected);
@@ -390,7 +387,6 @@ QWidget* MainWindow::buildKeyboardPage() {
 
     v->addLayout(form);
 
-    // Per-key editor (shown only in Per-key mode).
     perKeyPanel_ = new QWidget(page);
     auto* pkLayout = new QVBoxLayout(perKeyPanel_);
     pkLayout->setContentsMargins(0, 0, 0, 0);
@@ -445,7 +441,6 @@ QWidget* MainWindow::buildKeyboardPage() {
     perKeyPanel_->setVisible(false);
     v->addWidget(perKeyPanel_, 1);
 
-    // Keyboard zone editor for HID++ devices that report lighting zones.
     keyboardZonePanel_ = new QWidget(page);
     auto* kzLayout = new QVBoxLayout(keyboardZonePanel_);
     kzLayout->setContentsMargins(0, 0, 0, 0);
@@ -486,8 +481,6 @@ QWidget* MainWindow::buildKeyboardPage() {
            index < 0 || index >= modes_.size()) {
             return;
         }
-        // Selecting a G810 mode starts from the original Logitech Gaming
-        // Software defaults. Profiles loaded programmatically are untouched.
         effectDefaultsBtn_->click();
     });
     connect(effectDefaultsBtn_, &QPushButton::clicked, this, [this]() {
@@ -561,7 +554,7 @@ QWidget* MainWindow::buildKeyboardPage() {
         }
         const ModeEntry& m = modes_.at(modeCombo_->currentIndex());
         if(m.perkey || m.zones) {
-            return;  // not a live shared-colour source in these editors
+            return;
         }
         if(controller_->isConnected()) {
             onApply();
@@ -579,7 +572,6 @@ QWidget* MainWindow::buildCasePage() {
     auto* page = new QWidget(this);
     auto* v = new QVBoxLayout(page);
 
-    // Whole-case quick controls.
     auto* caseRow = new QHBoxLayout();
     caseRow->addWidget(new QLabel(i18n("Whole-case colour:"), page));
     caseColorButton_ = new KColorButton(QColor(0, 90, 255), page);
@@ -731,8 +723,6 @@ void MainWindow::setupTray() {
     tray_->setContextMenu(menu);
 }
 
-// --- Profile management -----------------------------------------------------
-
 void MainWindow::refreshProfileCombo() {
     profileCombo_->blockSignals(true);
     profileCombo_->clear();
@@ -824,8 +814,6 @@ void MainWindow::onDeleteProfile() {
     switchToProfile(Profiles::current(), /*apply=*/true);
 }
 
-// --- UI <-> settings --------------------------------------------------------
-
 void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
     int idx = 0;
     for(int i = 0; i < modes_.size(); ++i) {
@@ -864,7 +852,7 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
         directionCombo_->setCurrentIndex(di);
     }
     brightnessSlider_->setValue(s.brightness);
-    brightnessValue_->setText(QStringLiteral("%1%").arg(s.brightness));
+    brightnessValue_->setText(QStringLiteral("%1%").arg(brightnessSlider_->value()));
     keyboardWidget_->setKeyColors(s.keyColors);
     for(int i = 0; i < keyboardZoneButtons_.size(); ++i) {
         const QColor z = s.keyboardZoneColors.value(i, QColor(0, 0, 0));
@@ -980,10 +968,6 @@ void MainWindow::onModeChanged() {
     const auto mode = static_cast<Mode>(m.value);
     const int lgsPeriod = g810 ? g810LgsDefaultPeriodMs(mode) : 0;
 
-    // G810 uses an exact millisecond value instead of the generic
-    // Slow/Normal/Fast abstraction. For firmware effects this is the period;
-    // for the software Key Press effect it is the LGS echo rate. Star Effect
-    // has no x8070 period field.
     if(g810 && mode == Mode::Scanner) {
         usesColor = true;
         usesSpeed = false;
@@ -1016,7 +1000,6 @@ void MainWindow::onModeChanged() {
     perKeyPanel_->setVisible(perKey && m.perkey);
     keyboardZonePanel_->setVisible(zoned && m.zones);
     if(perKey && m.perkey) {
-        // Grow (never shrink) so the keyboard has room.
         resize(qMax(width(), 780), qMax(height(), 560));
     }
 
@@ -1029,6 +1012,15 @@ void MainWindow::onModeChanged() {
 }
 
 void MainWindow::onBrightnessChanged(int value) {
+    if(controller_->usesBeQuietLightMount()) {
+        const int snapped = lightMountBrightnessStep(value);
+        if(snapped != value) {
+            const bool wasBlocked = brightnessSlider_->blockSignals(true);
+            brightnessSlider_->setValue(snapped);
+            brightnessSlider_->blockSignals(wasBlocked);
+            value = snapped;
+        }
+    }
     brightnessValue_->setText(QStringLiteral("%1%").arg(value));
 }
 
@@ -1045,8 +1037,6 @@ void MainWindow::onApply() {
 void MainWindow::onOff() {
     controller_->applyOff();
 }
-
-// --- Per-key editor ---------------------------------------------------------
 
 void MainWindow::onPaintSelection() {
     keyboardWidget_->paintSelection(colorButton_->color());
@@ -1071,18 +1061,15 @@ void MainWindow::onPerKeyChanged() {
     s.save(Profiles::current());
 }
 
-// --- Case lighting ----------------------------------------------------------
-
 void MainWindow::onCaseApply() {
     if(!caseController_ || !caseController_->isAvailable()) {
         return;
     }
-    casePerZone_ = false;  // whole-case solid mode
-    // The case apply is a multi-packet sequence (~1-2s); show a busy cursor.
+    casePerZone_ = false;
     QApplication::setOverrideCursor(Qt::WaitCursor);
     caseController_->applySolid(caseColorButton_->color());
     QApplication::restoreOverrideCursor();
-    currentSettings().save(Profiles::current());  // persist into the active profile
+    currentSettings().save(Profiles::current());
 }
 
 void MainWindow::onCaseOff() {
@@ -1110,7 +1097,7 @@ void MainWindow::onCaseZoneIdentify() {
         return;
     }
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    caseController_->identify(zoneGrid_->selectedZones());  // selected zones white, rest off
+    caseController_->identify(zoneGrid_->selectedZones());
     QApplication::restoreOverrideCursor();
 }
 
@@ -1157,8 +1144,6 @@ void MainWindow::loadZoneLayout() {
     }
     zoneGrid_->setPositions(pos);
 }
-
-// --- Autostart / status -----------------------------------------------------
 
 void MainWindow::writeAutostartEntry(const QString& path, const QString& name, const QString& args) {
     QDir().mkpath(QFileInfo(path).absolutePath());
@@ -1210,11 +1195,24 @@ QString MainWindow::trayAutostartFilePath() const {
 void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     const bool g810Iso105 =
         connected && controller_->usesLogitechG810Iso105VisualLayout();
+    const bool lightMount = connected && controller_->usesBeQuietLightMount();
 
-    // The shared mode table uses historical Alienware names.  For the G810,
-    // present the names used by Logitech Gaming Software's
-    // PerKeyLightingDefaults resource and hide modes that this keyboard does
-    // not advertise through HID++ 0x8070.
+    if(brightnessSlider_) {
+        brightnessSlider_->setRange(lightMount ? 10 : 0, 100);
+        brightnessSlider_->setSingleStep(lightMount ? 10 : 1);
+        brightnessSlider_->setPageStep(10);
+        brightnessSlider_->setTickInterval(lightMount ? 10 : 0);
+        brightnessSlider_->setTickPosition(lightMount
+                                               ? QSlider::TicksBelow
+                                               : QSlider::NoTicks);
+        if(lightMount) {
+            brightnessSlider_->setValue(
+                lightMountBrightnessStep(brightnessSlider_->value()));
+        }
+        brightnessValue_->setText(
+            QStringLiteral("%1%").arg(brightnessSlider_->value()));
+    }
+
     for(int i = 0; i < modes_.size(); ++i) {
         const auto mode = static_cast<Mode>(modes_.at(i).value);
 
@@ -1327,7 +1325,6 @@ void MainWindow::onError(const QString& message) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-    // Closing hides to the system tray; quit via the tray menu (or Ctrl+Q).
     if(QSystemTrayIcon::isSystemTrayAvailable()) {
         hide();
         event->ignore();
