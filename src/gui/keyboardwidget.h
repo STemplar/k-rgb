@@ -60,7 +60,9 @@ private:
     struct KeyRect {
         QString name;
         QString label;
+        QString secondaryLabel;
         QRectF  cell;  // pixel rect, recomputed on resize
+        bool    round = false;
     };
 
     void          recomputeLayout();
