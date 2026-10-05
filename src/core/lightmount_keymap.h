@@ -2,8 +2,9 @@
 //
 // LED 45 is the illuminated 3D Media Wheel. Vendor LED IDs 46..157 form the
 // row-major keyboard matrix; 119, 126 and 137 are unpopulated positions.
-// Only M1..M5 are function-remappable; every entry below is independently
-// RGB-addressable.
+// IDs 0..44 are the top light bar, 158..162 the left strip and 163..167 the
+// right strip. Only M1..M5 are function-remappable; every entry below is
+// independently RGB-addressable and may be exposed by the per-key editor.
 #pragma once
 
 #include <array>
@@ -14,12 +15,15 @@ namespace krgb::lightmount {
 
 struct LightMountKey {
     std::uint16_t ledId;
-    const char* name;       // Stable internal / CLI name.
-    const char* legend;     // Label shown on the physical keyboard.
+    const char* name;       // Stable internal / CLI/profile name.
+    const char* legend;     // Label shown on the physical keyboard; empty for accent LEDs.
     bool remappable;        // Function remapping is available only on M1..M5.
 };
 
-inline constexpr std::array<LightMountKey, 110> kKeys = {{
+// Keep the physical keyboard elements first so existing key-order-dependent
+// behaviour remains stable. Accent LEDs are appended afterwards and therefore
+// become selectable/profile-addressable without changing the key matrix order.
+inline constexpr std::array<LightMountKey, 165> kKeys = {{
     { 45, "MEDIA_WHEEL", "Mute",   false },
 
     { 46, "ESC",        "Esc",    false },
@@ -136,12 +140,48 @@ inline constexpr std::array<LightMountKey, 110> kKeys = {{
     {155, "RIGHT",      "→",      false },
     {156, "NUM0",       "0",      false },
     {157, "NUMDOT",     ".",      false },
+
+    // Top light bar, left -> right.
+    {  0, "TOPBAR_00", "", false }, {  1, "TOPBAR_01", "", false },
+    {  2, "TOPBAR_02", "", false }, {  3, "TOPBAR_03", "", false },
+    {  4, "TOPBAR_04", "", false }, {  5, "TOPBAR_05", "", false },
+    {  6, "TOPBAR_06", "", false }, {  7, "TOPBAR_07", "", false },
+    {  8, "TOPBAR_08", "", false }, {  9, "TOPBAR_09", "", false },
+    { 10, "TOPBAR_10", "", false }, { 11, "TOPBAR_11", "", false },
+    { 12, "TOPBAR_12", "", false }, { 13, "TOPBAR_13", "", false },
+    { 14, "TOPBAR_14", "", false }, { 15, "TOPBAR_15", "", false },
+    { 16, "TOPBAR_16", "", false }, { 17, "TOPBAR_17", "", false },
+    { 18, "TOPBAR_18", "", false }, { 19, "TOPBAR_19", "", false },
+    { 20, "TOPBAR_20", "", false }, { 21, "TOPBAR_21", "", false },
+    { 22, "TOPBAR_22", "", false }, { 23, "TOPBAR_23", "", false },
+    { 24, "TOPBAR_24", "", false }, { 25, "TOPBAR_25", "", false },
+    { 26, "TOPBAR_26", "", false }, { 27, "TOPBAR_27", "", false },
+    { 28, "TOPBAR_28", "", false }, { 29, "TOPBAR_29", "", false },
+    { 30, "TOPBAR_30", "", false }, { 31, "TOPBAR_31", "", false },
+    { 32, "TOPBAR_32", "", false }, { 33, "TOPBAR_33", "", false },
+    { 34, "TOPBAR_34", "", false }, { 35, "TOPBAR_35", "", false },
+    { 36, "TOPBAR_36", "", false }, { 37, "TOPBAR_37", "", false },
+    { 38, "TOPBAR_38", "", false }, { 39, "TOPBAR_39", "", false },
+    { 40, "TOPBAR_40", "", false }, { 41, "TOPBAR_41", "", false },
+    { 42, "TOPBAR_42", "", false }, { 43, "TOPBAR_43", "", false },
+    { 44, "TOPBAR_44", "", false },
+
+    // Side strips. Physical ordering follows the validated vendor LED map.
+    {158, "LEFT_STRIP_0",  "", false }, {159, "LEFT_STRIP_1",  "", false },
+    {160, "LEFT_STRIP_2",  "", false }, {161, "LEFT_STRIP_3",  "", false },
+    {162, "LEFT_STRIP_4",  "", false },
+    {163, "RIGHT_STRIP_0", "", false }, {164, "RIGHT_STRIP_1", "", false },
+    {165, "RIGHT_STRIP_2", "", false }, {166, "RIGHT_STRIP_3", "", false },
+    {167, "RIGHT_STRIP_4", "", false },
 }};
 
 inline constexpr std::array<std::uint16_t, 3> kInactiveKeyLedIds = {{
     119, 126, 137
 }};
 
-inline constexpr std::size_t kKeyCount = kKeys.size();
+inline constexpr std::size_t kPhysicalKeyCount = 110; // 109 keycaps + media wheel
+inline constexpr std::size_t kRgbElementCount = kKeys.size();
+// Backward-compatible physical-key count for code that uses this as a layout count.
+inline constexpr std::size_t kKeyCount = kPhysicalKeyCount;
 
 } // namespace krgb::lightmount
