@@ -88,7 +88,6 @@ std::string LightMountDevice::findDevicePath() {
             continue;
         }
 
-        // The USB interface directory is an ancestor of the resolved HID node.
         const fs::path real = fs::canonical(devlink, ec);
         if(ec) {
             continue;
@@ -200,7 +199,15 @@ bool LightMountDevice::setLightingMode(LightMountLightingMode mode) {
 }
 
 bool LightMountDevice::setCustomMode() {
-    return setLightingMode(LightMountLightingMode::Custom);
+    if(!setLightingMode(LightMountLightingMode::Custom)) {
+        return false;
+    }
+
+    // IO Center leaves a short settling interval after switching into Custom
+    // mode before sending 0x10/0x0d LED records. Without this pause the Light
+    // Mount can accept the packets at the HID layer but ignore the RGB update.
+    sleepMs(100);
+    return true;
 }
 
 bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
@@ -256,7 +263,7 @@ bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
     packet[2] = 0x01;
     packet[5] = 0x10;
     packet[6] = 0x06;
-    packet[7] = 0x00; // Reserved/unknown in every captured IO Center packet.
+    packet[7] = 0x00;
     packet[8] = static_cast<std::uint8_t>(effect.effect);
     packet[9] = direction;
     packet[10] = effect.brightness;
@@ -289,7 +296,6 @@ bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
         end = offset - 1;
     }
 
-    // IO Center stores the last occupied packet byte index in byte 0.
     packet[0] = static_cast<std::uint8_t>(end);
     return writePacket(packet);
 }
@@ -297,10 +303,6 @@ bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
 bool LightMountDevice::sendFiveLeds(const LightMountLedColor* leds) {
     Report packet{};
 
-    // Validated short IO Center Custom update:
-    //   26 00 01 00 <seq> 10 0d 06
-    // followed by five records:
-    //   03 <id-lo> <id-hi> <r> <g> <b>
     packet[0] = 0x26;
     packet[2] = 0x01;
     packet[5] = 0x10;
@@ -337,9 +339,6 @@ bool LightMountDevice::setLeds(const std::vector<LightMountLedColor>& leds) {
                 packetLeds[j] = leds[i + j];
             }
 
-            // The protocol has no validated "record count" field. Repeat the
-            // last requested record to fill the packet without changing any
-            // unrelated LED state.
             for(std::size_t j = remaining; j < kLedsPerPacket; ++j) {
                 packetLeds[j] = packetLeds[remaining - 1];
             }
@@ -356,15 +355,14 @@ bool LightMountDevice::setLeds(const std::vector<LightMountLedColor>& leds) {
 
 bool LightMountDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     std::vector<LightMountLedColor> leds;
-    leds.reserve(lightmount::kTopBarCount + 1 + lightmount::kKeyCount +
+    leds.reserve(lightmount::kTopBarCount + lightmount::kKeyCount +
                  lightmount::kLeftStripCount + lightmount::kRightStripCount);
 
     for(std::uint16_t id = lightmount::kTopBarFirst; id <= lightmount::kTopBarLast; ++id) {
         leds.push_back({id, r, g, b});
     }
 
-    leds.push_back({lightmount::k3DMediaWheelLed, r, g, b});
-
+    // kKeys includes the 3D Media Wheel as LED 45.
     for(const auto& key : lightmount::kKeys) {
         leds.push_back({key.ledId, r, g, b});
     }
@@ -379,7 +377,6 @@ bool LightMountDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) 
     if(!setCustomMode()) {
         return false;
     }
-    sleepMs(100);
     return setLeds(leds);
 }
 
@@ -404,7 +401,6 @@ bool LightMountDevice::setAccentSolid(
     if(!setCustomMode()) {
         return false;
     }
-    sleepMs(100);
     return setLeds(leds);
 }
 
