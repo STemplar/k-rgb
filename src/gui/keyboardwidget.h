@@ -1,9 +1,9 @@
-// KeyboardWidget — a graphical AW410K layout for editing per-key colours.
+// KeyboardWidget — graphical keyboard layout for editing per-key colours.
 //
-// Draws every key in its real position (from keymap.h geometry). Click a key to
-// select it, drag to rubber-band a group, Ctrl-click to add/remove. The current
-// selection can then be painted a colour. Keys keep their assigned colour as a
-// swatch; unassigned keys render dark.
+// Draws the active keyboard in its real position. Click a key to select it,
+// drag to rubber-band a group, Ctrl-click to add/remove. The current selection
+// can then be painted a colour. Keys keep their assigned colour as a swatch;
+// unassigned keys render dark.
 #pragma once
 
 #include <QColor>
@@ -20,6 +20,7 @@ public:
     enum class LayoutKind {
         Alienware,
         LogitechG810Iso105,
+        BeQuietLightMountAnsi,
     };
 
     explicit KeyboardWidget(QWidget* parent = nullptr);
@@ -30,8 +31,8 @@ public:
     QHash<QString, QColor> keyColors() const { return colors_; }
     void                   setKeyColors(const QHash<QString, QColor>& colors);
 
-    // Restrict the drawn/selectable keys to those a model has (bit from
-    // KeyboardModel::bit; 0xFF = all keys). Repaints.
+    // Restrict the drawn/selectable Alienware keys to those a model has (bit
+    // from KeyboardModel::bit; 0xFF = all keys). Other layouts ignore it.
     void setModelBit(quint8 bit);
 
     QStringList selectedKeys() const;
