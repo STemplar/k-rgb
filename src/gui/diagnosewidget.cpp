@@ -1,8 +1,6 @@
 #include "diagnosewidget.h"
 
 #include "keyboardcontroller.h"
-#include "core/lightmount_device.h"
-#include "core/lightmount_map.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -21,7 +19,7 @@ DiagnoseWidget::DiagnoseWidget(KeyboardController* controller, QWidget* parent)
     auto* layout = new QVBoxLayout(this);
 
     auto* topRow = new QHBoxLayout();
-    auto* title = new QLabel(i18n("Keyboard diagnostics"), this);
+    auto* title = new QLabel(i18n("Device diagnostics"), this);
     QFont titleFont = title->font();
     titleFont.setBold(true);
     title->setFont(titleFont);
@@ -37,9 +35,6 @@ DiagnoseWidget::DiagnoseWidget(KeyboardController* controller, QWidget* parent)
     summaryLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     summaryLabel_->setWordWrap(true);
     layout->addWidget(summaryLabel_);
-
-    auto* cliLabel = new QLabel(i18n("Diagnostic CLI output:"), this);
-    layout->addWidget(cliLabel);
 
     output_ = new QPlainTextEdit(this);
     output_->setReadOnly(true);
@@ -60,38 +55,18 @@ QString DiagnoseWidget::knownInformation() const {
         return i18n("No supported keyboard is connected.");
     }
 
-    QStringList lines;
-    lines << i18n("Model: %1", controller_->modelName().isEmpty()
-                                   ? i18n("Unknown")
-                                   : controller_->modelName());
-    lines << i18n("Device node: %1", controller_->devicePath());
+    const QString model = controller_->modelName().isEmpty()
+        ? i18n("Unknown") : controller_->modelName();
 
     if(controller_->usesBeQuietLightMount()) {
-        lines << i18n("Manufacturer: be quiet!")
-              << i18n("Series: Light Mount")
-              << i18n("Protocol: be quiet! Mount vendor HID")
-              << QStringLiteral("VID:PID: %1:%2")
-                     .arg(krgb::LightMountDevice::kVendorId, 4, 16, QLatin1Char('0'))
-                     .arg(krgb::LightMountDevice::kProductId, 4, 16, QLatin1Char('0'))
-                     .toUpper()
-              << i18n("Vendor HID interface: 2")
-              << i18n("HID LampArray interface: 3")
-              << i18n("Addressable RGB elements: 165")
-              << i18n("Top bar: %1 LEDs", static_cast<int>(krgb::lightmount::kTopBarCount))
-              << i18n("3D Media Wheel: 1 LED")
-              << i18n("Keyboard: 109 key LEDs")
-              << i18n("Left strip: %1 LEDs", static_cast<int>(krgb::lightmount::kLeftStripCount))
-              << i18n("Right strip: %1 LEDs", static_cast<int>(krgb::lightmount::kRightStripCount))
-              << i18n("Firmware version: not yet exposed by the Light Mount diagnostic CLI");
-    } else if(controller_->usesLogitechHIDPP20()) {
-        lines << i18n("Protocol: Logitech HID++ 2.0")
-              << i18n("USB identity, firmware, feature set and capabilities are read below from krgb-cli logitech info.");
-    } else {
-        lines << i18n("Protocol: Alienware keyboard lighting")
-              << i18n("USB identity and firmware information are read below from krgb-cli info where available.");
+        return i18n("%1 — be quiet! Light Mount diagnostics are read from the vendor HID and HID LampArray interfaces.",
+                    model);
     }
-
-    return lines.join(QLatin1Char('\n'));
+    if(controller_->usesLogitechHIDPP20()) {
+        return i18n("%1 — diagnostics are discovered from the device's HID++ 2.0 Feature Set.",
+                    model);
+    }
+    return i18n("%1 — device diagnostics.", model);
 }
 
 QString DiagnoseWidget::cliProgram() const {
