@@ -19,11 +19,15 @@ struct LightingSettings {
     enum Kind { Solid, Rainbow, Effect, PerKey, Zones };
 
     Kind   kind       = Solid;
-    int    effectMode = 0;  // krgb::Mode value, used when kind == Effect
+    int    effectMode = 0;
     QColor color      = QColor(0, 170, 255);
+    QColor secondaryColor = QColor(255, 255, 255);
+    // Protocol-specific colour variant for effects that support it. For the
+    // be quiet! Mount protocol this is BeQuietMountColorMode (Single/Dual/Gradient).
+    int    effectColorMode = 0;
     int    speed      = static_cast<int>(krgb::Speed::Normal);
     int    direction  = static_cast<int>(krgb::Direction::Left);
-    // Exact firmware effect period for devices such as the G810.  Zero keeps
+    // Exact firmware effect period for devices such as the G810. Zero keeps
     // compatibility with older profiles and derives the period from speed.
     int    effectPeriodMs = 0;
     int    brightness = 100;
