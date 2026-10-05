@@ -5,6 +5,7 @@
 #include "core/logitech_g810_iso105_visual.h"
 
 #include <QFont>
+#include <QFontMetricsF>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -125,6 +126,136 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
                      QPointF(icon.left() + icon.width() * 0.62,
                              icon.bottom() - icon.height() * 0.24));
     painter.restore();
+}
+
+enum class BeQuietArrow { Up, Down, Left, Right };
+
+void drawBeQuietTriangle(QPainter& painter, const QPointF& center,
+                         qreal keySize, BeQuietArrow direction,
+                         const QColor& color, qreal scale) {
+    const qreal halfW = keySize * scale * 0.50;
+    const qreal halfH = keySize * scale * 0.42;
+
+    QPainterPath path;
+    switch(direction) {
+        case BeQuietArrow::Up:
+            path.moveTo(center.x(), center.y() - halfH);
+            path.lineTo(center.x() - halfW, center.y() + halfH);
+            path.lineTo(center.x() + halfW, center.y() + halfH);
+            break;
+        case BeQuietArrow::Down:
+            path.moveTo(center.x(), center.y() + halfH);
+            path.lineTo(center.x() - halfW, center.y() - halfH);
+            path.lineTo(center.x() + halfW, center.y() - halfH);
+            break;
+        case BeQuietArrow::Left:
+            path.moveTo(center.x() - halfH, center.y());
+            path.lineTo(center.x() + halfH, center.y() - halfW);
+            path.lineTo(center.x() + halfH, center.y() + halfW);
+            break;
+        case BeQuietArrow::Right:
+            path.moveTo(center.x() + halfH, center.y());
+            path.lineTo(center.x() - halfH, center.y() - halfW);
+            path.lineTo(center.x() - halfH, center.y() + halfW);
+            break;
+    }
+    path.closeSubpath();
+
+    painter.save();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawPath(path);
+    painter.restore();
+}
+
+bool dedicatedBeQuietCursor(const QString& name, BeQuietArrow& direction) {
+    if(name == QStringLiteral("UP")) {
+        direction = BeQuietArrow::Up;
+        return true;
+    }
+    if(name == QStringLiteral("DOWN")) {
+        direction = BeQuietArrow::Down;
+        return true;
+    }
+    if(name == QStringLiteral("LEFT")) {
+        direction = BeQuietArrow::Left;
+        return true;
+    }
+    if(name == QStringLiteral("RIGHT")) {
+        direction = BeQuietArrow::Right;
+        return true;
+    }
+    return false;
+}
+
+bool numpadBeQuietCursor(const QString& name, BeQuietArrow& direction) {
+    if(name == QStringLiteral("NUM8")) {
+        direction = BeQuietArrow::Up;
+        return true;
+    }
+    if(name == QStringLiteral("NUM2")) {
+        direction = BeQuietArrow::Down;
+        return true;
+    }
+    if(name == QStringLiteral("NUM4")) {
+        direction = BeQuietArrow::Left;
+        return true;
+    }
+    if(name == QStringLiteral("NUM6")) {
+        direction = BeQuietArrow::Right;
+        return true;
+    }
+    return false;
+}
+
+void drawBeQuietSpaceMark(QPainter& painter, const QRectF& cell,
+                          const QColor& color) {
+    painter.save();
+    QPen pen(color, qMax<qreal>(1.0, cell.height() * 0.035));
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    const qreal width = cell.width() * 0.17;
+    const qreal y = cell.top() + cell.height() * 0.46;
+    painter.drawLine(QPointF(cell.center().x() - width / 2.0, y),
+                     QPointF(cell.center().x() + width / 2.0, y));
+    painter.restore();
+}
+
+QFont beQuietLegendFont(const QFont& base, const QRectF& cell,
+                        const QString& text) {
+    QFont font(base);
+    // The supplied Light Mount image uses a compact, medium-heavy sans-serif
+    // for all printed legends. Keep a deterministic Linux-friendly fallback
+    // stack while avoiding symbol/emoji fallback for ordinary key legends.
+    font.setFamilies({QStringLiteral("Noto Sans"),
+                      QStringLiteral("DejaVu Sans"),
+                      QStringLiteral("sans-serif")});
+    font.setStyleHint(QFont::SansSerif);
+    font.setWeight(QFont::DemiBold);
+
+    const qreal keySize = qMin(cell.width(), cell.height());
+    font.setPixelSize(qBound(9, static_cast<int>(keySize * 0.32), 16));
+
+    // Preserve one size for primary+secondary glyphs within a legend, while
+    // allowing long legends such as "Scr Lk" to fit the physical keycap.
+    while(font.pixelSize() > 8) {
+        const QFontMetricsF fm(font);
+        if(fm.horizontalAdvance(text) <= cell.width() * 0.84) {
+            break;
+        }
+        font.setPixelSize(font.pixelSize() - 1);
+    }
+    return font;
+}
+
+QRectF beQuietLegendRect(const QRectF& cell) {
+    // On the supplied keyboard image the legends sit in the upper portion of
+    // each keycap rather than being vertically centred.
+    const qreal keySize = qMin(cell.width(), cell.height());
+    return QRectF(cell.left() + 1.5,
+                  cell.top() + keySize * 0.10,
+                  qMax<qreal>(1.0, cell.width() - 3.0),
+                  keySize * 0.48);
 }
 
 bool looksLikeUkrainePreset(const QHash<QString, QColor>& colors) {
@@ -373,13 +504,6 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
     painter.fillRect(rect(), kBackground);
 
     const bool beQuiet = isBeQuietLayout(layoutKind_);
-    QFont beQuietFont = painter.font();
-    if(beQuiet) {
-        beQuietFont.setFamilies({QStringLiteral("Noto Sans"),
-                                 QStringLiteral("DejaVu Sans"),
-                                 QStringLiteral("sans-serif")});
-        beQuietFont.setWeight(QFont::Normal);
-    }
 
     for(const KeyRect& r : rects_) {
         const QColor fill = colors_.value(r.name, kUnset);
@@ -406,14 +530,39 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         if(r.cell.width() < 10.0 || r.cell.height() < 8.0) continue;
 
         if(beQuiet) {
-            QFont font = beQuietFont;
-            font.setPixelSize(qBound(9, static_cast<int>(r.cell.height() * 0.31), 15));
-            painter.setFont(font);
             if(r.round) {
                 drawBeQuietMuteMark(painter, r.cell, textColor);
-            } else {
-                painter.drawText(r.cell.adjusted(2.0, 1.0, -2.0, -1.0),
-                                 Qt::AlignCenter, r.label);
+                continue;
+            }
+
+            const qreal keySize = qMin(r.cell.width(), r.cell.height());
+            BeQuietArrow arrow;
+            if(dedicatedBeQuietCursor(r.name, arrow)) {
+                drawBeQuietTriangle(painter, r.cell.center(), keySize,
+                                    arrow, textColor, 0.42);
+                continue;
+            }
+
+            if(r.name == QStringLiteral("SPACE")) {
+                drawBeQuietSpaceMark(painter, r.cell, textColor);
+                continue;
+            }
+
+            const QFont font = beQuietLegendFont(painter.font(), r.cell, r.label);
+            painter.setFont(font);
+            painter.drawText(beQuietLegendRect(r.cell),
+                             Qt::AlignHCenter | Qt::AlignTop,
+                             r.label);
+
+            // The supplied Light Mount image prints the numpad navigation
+            // glyphs separately near the bottom of 8/4/6/2 while keeping the
+            // number itself in the same upper legend position as the other
+            // numpad keys.
+            if(numpadBeQuietCursor(r.name, arrow)) {
+                const QPointF center(r.cell.center().x(),
+                                     r.cell.top() + r.cell.height() * 0.74);
+                drawBeQuietTriangle(painter, center, keySize,
+                                    arrow, textColor, 0.27);
             }
         } else {
             QFont font = painter.font();
