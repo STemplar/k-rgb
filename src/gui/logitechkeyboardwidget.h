@@ -13,10 +13,6 @@ class QPushButton;
 class QSlider;
 class QSpinBox;
 
-namespace krgb {
-struct LogitechHIDPP20ColorLedEffectInfo;
-}
-
 class LogitechKeyboardWidget : public QWidget {
     Q_OBJECT
 public:
@@ -27,6 +23,12 @@ public:
     void loadCurrentProfile();
 
 private:
+    enum class EffectSource {
+        None,
+        ColorLed8070,
+        RgbEffects8071,
+    };
+
     struct EffectEntry {
         std::uint16_t id = 0;
         std::uint16_t capabilities = 0;
@@ -51,5 +53,6 @@ private:
     QPushButton* offButton_ = nullptr;
 
     std::vector<EffectEntry> effects_;
+    EffectSource effectSource_ = EffectSource::None;
     bool loading_ = false;
 };
