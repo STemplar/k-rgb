@@ -7,6 +7,7 @@
 #include <QFont>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEvent>
 
 namespace {
@@ -77,9 +78,57 @@ QString labelFor(const QString& name) {
         return it.value();
     }
     if(name.startsWith(QStringLiteral("NP"))) {
-        return name.mid(2);  // numpad: show just the glyph
+        return name.mid(2);
     }
     return name;
+}
+
+bool isBeQuietLayout(KeyboardWidget::LayoutKind kind) {
+    // Keep all be quiet! family-specific typography/rendering in one place.
+    // Light Mount TKL and Dark Mount can join this helper when their layout
+    // kinds are added.
+    return kind == KeyboardWidget::LayoutKind::BeQuietLightMountAnsi;
+}
+
+void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
+                         const QColor& color) {
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const qreal d = qMin(cell.width(), cell.height());
+    const QRectF icon(cell.center().x() - d * 0.25,
+                      cell.center().y() - d * 0.22,
+                      d * 0.50, d * 0.44);
+
+    QPen pen(color, qMax<qreal>(1.2, d * 0.035));
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    // Speaker shape, matching the simple white line icon printed on the wheel.
+    QPainterPath speaker;
+    speaker.moveTo(icon.left(), icon.center().y() - icon.height() * 0.16);
+    speaker.lineTo(icon.left() + icon.width() * 0.22,
+                   icon.center().y() - icon.height() * 0.16);
+    speaker.lineTo(icon.left() + icon.width() * 0.46, icon.top());
+    speaker.lineTo(icon.left() + icon.width() * 0.46, icon.bottom());
+    speaker.lineTo(icon.left() + icon.width() * 0.22,
+                   icon.center().y() + icon.height() * 0.16);
+    speaker.lineTo(icon.left(), icon.center().y() + icon.height() * 0.16);
+    speaker.closeSubpath();
+    painter.drawPath(speaker);
+
+    // Crossed sound mark used by the physical mute button.
+    painter.drawLine(QPointF(icon.left() + icon.width() * 0.62,
+                             icon.top() + icon.height() * 0.24),
+                     QPointF(icon.right(),
+                             icon.bottom() - icon.height() * 0.24));
+    painter.drawLine(QPointF(icon.right(),
+                             icon.top() + icon.height() * 0.24),
+                     QPointF(icon.left() + icon.width() * 0.62,
+                             icon.bottom() - icon.height() * 0.24));
+    painter.restore();
 }
 } // namespace
 
@@ -131,9 +180,6 @@ void KeyboardWidget::setKeyColors(const QHash<QString, QColor>& colors) {
 }
 
 void KeyboardWidget::setModelBit(quint8 bit) {
-    // MainWindow historically passes only the Alienware model bit. Reserve a
-    // private sentinel for the Light Mount so the same call can switch to the
-    // supplied US ANSI geometry without coupling MainWindow to that backend.
     if(bit == kLightMountLayoutModelBit) {
         modelBit_ = bit;
         setLayoutKind(LayoutKind::BeQuietLightMountAnsi);
@@ -164,7 +210,6 @@ void KeyboardWidget::recomputeLayout() {
     const double availH = height() - 2 * kMargin;
     const double unit = qMin(availW / sourceW, availH / sourceH);
 
-    // Centre the layout within the widget.
     const double originX = (width() - unit * sourceW) / 2.0;
     const double originY = (height() - unit * sourceH) / 2.0;
 
@@ -172,18 +217,16 @@ void KeyboardWidget::recomputeLayout() {
         const auto& elements = krgb::logitech::g810_iso105_visual::elements();
         rects_.reserve(static_cast<int>(elements.size()));
         for(const auto& element : elements) {
-            const auto* def =
-                krgb::logitech::g810_iso105_visual::definition(element);
+            const auto* def = krgb::logitech::g810_iso105_visual::definition(element);
             if(!def) {
                 continue;
             }
-
             const QRectF cell(originX + element.x * unit + kKeyInset / 2.0,
                               originY + element.y * unit + kKeyInset / 2.0,
                               qMax(1.0, element.w * unit - kKeyInset),
                               qMax(1.0, element.h * unit - kKeyInset));
             const QString name = QString::fromLatin1(def->name);
-            rects_.push_back({name, labelFor(name), QString(), cell, false});
+            rects_.push_back({name, labelFor(name), cell, false});
         }
         return;
     }
@@ -197,13 +240,9 @@ void KeyboardWidget::recomputeLayout() {
                               qMax(1.0, key.w * unit - kKeyInset),
                               qMax(1.0, key.h * unit - kKeyInset));
             const QString name = QString::fromLatin1(key.name);
-            const QString primary = QString::fromUtf8(key.primary);
-            const QString secondary = QString::fromUtf8(key.secondary);
-            rects_.push_back({name,
-                              primary.isEmpty() ? labelFor(name) : primary,
-                              secondary,
-                              cell,
-                              key.round});
+            const QString label = QString::fromUtf8(key.label);
+            rects_.push_back({name, label.isEmpty() ? labelFor(name) : label,
+                              cell, key.round});
         }
         return;
     }
@@ -212,14 +251,14 @@ void KeyboardWidget::recomputeLayout() {
     for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
         const krgb::KeyDef& k = krgb::kKeyMap[i];
         if(!(k.models & modelBit_)) {
-            continue;  // key absent on the active model
+            continue;
         }
         const QRectF cell(originX + k.x * unit + kKeyInset / 2.0,
                           originY + k.y * unit + kKeyInset / 2.0,
                           k.w * unit - kKeyInset,
                           k.h * unit - kKeyInset);
         const QString name = QString::fromLatin1(k.name);
-        rects_.push_back({name, labelFor(name), QString(), cell, false});
+        rects_.push_back({name, labelFor(name), cell, false});
     }
 }
 
@@ -251,16 +290,15 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
     painter.setRenderHint(QPainter::TextAntialiasing, true);
     painter.fillRect(rect(), kBackground);
 
-    const bool lightMount = layoutKind_ == LayoutKind::BeQuietLightMountAnsi;
-
-    QFont baseFont = painter.font();
-    if(lightMount) {
-        // be quiet! uses a clean, narrow sans-serif legend. Prefer Noto Sans,
-        // then let Qt/fontconfig fall back when it is unavailable.
-        baseFont.setFamilies({QStringLiteral("Noto Sans"),
-                              QStringLiteral("DejaVu Sans"),
-                              QStringLiteral("sans-serif")});
-        baseFont.setWeight(QFont::Medium);
+    const bool beQuiet = isBeQuietLayout(layoutKind_);
+    QFont beQuietFont = painter.font();
+    if(beQuiet) {
+        // Use one font, one size and one centred legend string for all glyphs,
+        // matching the physical be quiet! keycap treatment.
+        beQuietFont.setFamilies({QStringLiteral("Noto Sans"),
+                                 QStringLiteral("DejaVu Sans"),
+                                 QStringLiteral("sans-serif")});
+        beQuietFont.setWeight(QFont::Normal);
     }
 
     for(const KeyRect& r : rects_) {
@@ -271,16 +309,16 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         painter.setPen(QPen(sel ? kSelect : QColor(0, 0, 0, 160), sel ? 2.0 : 1.0));
         if(r.round) {
             painter.drawEllipse(r.cell);
-            QRectF inner = r.cell.adjusted(r.cell.width() * 0.13,
-                                           r.cell.height() * 0.13,
-                                           -r.cell.width() * 0.13,
-                                           -r.cell.height() * 0.13);
+            const QRectF inner = r.cell.adjusted(r.cell.width() * 0.13,
+                                                 r.cell.height() * 0.13,
+                                                 -r.cell.width() * 0.13,
+                                                 -r.cell.height() * 0.13);
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(QColor(180, 180, 180, 90), 1.0));
             painter.drawEllipse(inner);
         } else {
-            painter.drawRoundedRect(r.cell, lightMount ? 2.0 : 3.0,
-                                    lightMount ? 2.0 : 3.0);
+            painter.drawRoundedRect(r.cell, beQuiet ? 2.0 : 3.0,
+                                    beQuiet ? 2.0 : 3.0);
         }
 
         const double lum = 0.299 * fill.red() + 0.587 * fill.green() + 0.114 * fill.blue();
@@ -291,34 +329,16 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
             continue;
         }
 
-        if(lightMount) {
-            QFont primaryFont = baseFont;
-            primaryFont.setPixelSize(qBound(9, static_cast<int>(r.cell.height() * 0.34), 16));
-            painter.setFont(primaryFont);
+        if(beQuiet) {
+            QFont font = beQuietFont;
+            font.setPixelSize(qBound(9, static_cast<int>(r.cell.height() * 0.31), 15));
+            painter.setFont(font);
 
             if(r.round) {
-                painter.drawText(r.cell, Qt::AlignCenter, QStringLiteral("🔇"));
-                continue;
-            }
-
-            if(!r.secondaryLabel.isEmpty() && r.cell.width() >= 24.0) {
-                // Match the printed keycaps: primary legend slightly left and
-                // lower, shifted glyph smaller toward the upper-right.
-                const QRectF primaryRect = r.cell.adjusted(r.cell.width() * 0.12,
-                                                           r.cell.height() * 0.22,
-                                                           -r.cell.width() * 0.38,
-                                                           -r.cell.height() * 0.08);
-                painter.drawText(primaryRect, Qt::AlignCenter, r.label);
-
-                QFont secondaryFont = primaryFont;
-                secondaryFont.setPixelSize(qMax(8, primaryFont.pixelSize() - 2));
-                painter.setFont(secondaryFont);
-                const QRectF secondaryRect = r.cell.adjusted(r.cell.width() * 0.50,
-                                                             r.cell.height() * 0.04,
-                                                             -r.cell.width() * 0.08,
-                                                             -r.cell.height() * 0.48);
-                painter.drawText(secondaryRect, Qt::AlignCenter, r.secondaryLabel);
+                drawBeQuietMuteMark(painter, r.cell, textColor);
             } else {
+                // Combined primary+secondary legend, same font and size,
+                // centred as one unit just like the supplied keyboard image.
                 painter.drawText(r.cell.adjusted(2.0, 1.0, -2.0, -1.0),
                                  Qt::AlignCenter, r.label);
             }
@@ -336,9 +356,9 @@ void KeyboardWidget::mousePressEvent(QMouseEvent* ev) {
         return;
     }
     const bool additive = ev->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
-    pressPos_  = ev->position();
-    dragging_  = true;
-    moved_     = false;
+    pressPos_ = ev->position();
+    dragging_ = true;
+    moved_ = false;
 
     const QString hit = keyAt(pressPos_);
     if(!additive) {
@@ -366,7 +386,7 @@ void KeyboardWidget::mouseMoveEvent(QMouseEvent* ev) {
     if(!moved_ && (p - pressPos_).manhattanLength() < 4) {
         return;
     }
-    moved_  = true;
+    moved_ = true;
     rubber_ = QRectF(pressPos_, p).normalized();
 
     selected_ = baseSelection_;
@@ -384,7 +404,7 @@ void KeyboardWidget::mouseReleaseEvent(QMouseEvent* ev) {
         return;
     }
     dragging_ = false;
-    rubber_   = QRectF();
+    rubber_ = QRectF();
     update();
 }
 
@@ -404,7 +424,7 @@ void KeyboardWidget::clearSelection() {
         return;
     }
     for(const QString& name : selected_) {
-        colors_.remove(name);  // unassigned == off
+        colors_.remove(name);
     }
     update();
     Q_EMIT changed();
@@ -415,8 +435,7 @@ void KeyboardWidget::selectAll() {
 
     if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
         for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
-            const auto* def =
-                krgb::logitech::g810_iso105_visual::definition(element);
+            const auto* def = krgb::logitech::g810_iso105_visual::definition(element);
             if(def) {
                 selected_.insert(QString::fromLatin1(def->name));
             }
@@ -444,8 +463,7 @@ void KeyboardWidget::fillAll(const QColor& color) {
 
     if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
         for(const auto& element : krgb::logitech::g810_iso105_visual::elements()) {
-            const auto* def =
-                krgb::logitech::g810_iso105_visual::definition(element);
+            const auto* def = krgb::logitech::g810_iso105_visual::definition(element);
             if(def) {
                 colors_.insert(QString::fromLatin1(def->name), color);
             }
