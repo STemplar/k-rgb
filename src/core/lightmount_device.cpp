@@ -355,23 +355,12 @@ bool LightMountDevice::setLeds(const std::vector<LightMountLedColor>& leds) {
 
 bool LightMountDevice::setSolid(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     std::vector<LightMountLedColor> leds;
-    leds.reserve(lightmount::kTopBarCount + lightmount::kKeyCount +
-                 lightmount::kLeftStripCount + lightmount::kRightStripCount);
+    leds.reserve(lightmount::kRgbElementCount);
 
-    for(std::uint16_t id = lightmount::kTopBarFirst; id <= lightmount::kTopBarLast; ++id) {
-        leds.push_back({id, r, g, b});
-    }
-
-    // kKeys includes the 3D Media Wheel as LED 45.
+    // kKeys contains every addressable RGB element: top bar, media wheel,
+    // physical keys and both side strips.
     for(const auto& key : lightmount::kKeys) {
         leds.push_back({key.ledId, r, g, b});
-    }
-
-    for(std::uint16_t id = lightmount::kLeftStripFirst; id <= lightmount::kLeftStripLast; ++id) {
-        leds.push_back({id, r, g, b});
-    }
-    for(std::uint16_t id = lightmount::kRightStripFirst; id <= lightmount::kRightStripLast; ++id) {
-        leds.push_back({id, r, g, b});
     }
 
     if(!setCustomMode()) {
