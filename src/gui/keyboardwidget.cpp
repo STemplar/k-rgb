@@ -1,6 +1,7 @@
 #include "keyboardwidget.h"
 
 #include "core/keymap.h"
+#include "core/lightmount_ansi_visual.h"
 #include "core/logitech_g810_iso105_visual.h"
 
 #include <QFont>
@@ -91,12 +92,18 @@ double KeyboardWidget::layoutWidth() const {
     if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
         return krgb::logitech::g810_iso105_visual::kLayoutWidth;
     }
+    if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        return krgb::lightmount::ansi_visual::kLayoutWidth;
+    }
     return krgb::kLayoutWidth;
 }
 
 double KeyboardWidget::layoutHeight() const {
     if(layoutKind_ == LayoutKind::LogitechG810Iso105) {
         return krgb::logitech::g810_iso105_visual::kLayoutHeight;
+    }
+    if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        return krgb::lightmount::ansi_visual::kLayoutHeight;
     }
     return krgb::kLayoutHeight;
 }
@@ -167,6 +174,21 @@ void KeyboardWidget::recomputeLayout() {
                               qMax(1.0, element.h * unit - kKeyInset));
             const QString name = QString::fromLatin1(def->name);
             rects_.push_back({name, labelFor(name), cell});
+        }
+        return;
+    }
+
+    if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        const auto& keys = krgb::lightmount::ansi_visual::keys();
+        rects_.reserve(static_cast<int>(keys.size()));
+        for(const auto& key : keys) {
+            const QRectF cell(originX + key.x * unit + kKeyInset / 2.0,
+                              originY + key.y * unit + kKeyInset / 2.0,
+                              qMax(1.0, key.w * unit - kKeyInset),
+                              qMax(1.0, key.h * unit - kKeyInset));
+            const QString name = QString::fromLatin1(key.name);
+            const QString label = QString::fromUtf8(key.label);
+            rects_.push_back({name, label.isEmpty() ? labelFor(name) : label, cell});
         }
         return;
     }
@@ -313,6 +335,10 @@ void KeyboardWidget::selectAll() {
                 selected_.insert(QString::fromLatin1(def->name));
             }
         }
+    } else if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
+            selected_.insert(QString::fromLatin1(key.name));
+        }
     } else {
         for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
             if(krgb::kKeyMap[i].models & modelBit_) {
@@ -337,6 +363,10 @@ void KeyboardWidget::fillAll(const QColor& color) {
             if(def) {
                 colors_.insert(QString::fromLatin1(def->name), color);
             }
+        }
+    } else if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        for(const auto& key : krgb::lightmount::ansi_visual::keys()) {
+            colors_.insert(QString::fromLatin1(key.name), color);
         }
     } else {
         for(std::size_t i = 0; i < krgb::kKeyCount; ++i) {
