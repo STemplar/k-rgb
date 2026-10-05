@@ -16,16 +16,18 @@ namespace krgb::lightmount::ansi_visual {
 struct VisualKey {
     std::uint16_t ledId;
     const char* name;
-    const char* label;
+    const char* primary;
+    const char* secondary;
     float x;
     float y;
     float w;
     float h;
+    bool round;
 };
 
-inline constexpr float kLayoutWidth = 24.4f;
-inline constexpr float kLayoutHeight = 7.15f;
-inline constexpr std::size_t kExpectedKeyCount = 110; // 109 keys + media wheel
+inline constexpr float kLayoutWidth = 24.55f;
+inline constexpr float kLayoutHeight = 7.10f;
+inline constexpr std::size_t kExpectedKeyCount = 110; // 109 keys + 3D Media Wheel
 inline constexpr const char* kMediaWheelName = "MEDIA_WHEEL";
 
 inline const LightMountKey* keyByName(std::string_view name) {
@@ -42,120 +44,138 @@ inline const std::vector<VisualKey>& keys() {
         std::vector<VisualKey> out;
         out.reserve(kExpectedKeyCount);
 
-        // The label argument is deliberately the primary function only.  The
-        // physical keymap also stores shifted legends (1!, 2@, etc.), but they
-        // make the compact GUI drawing unreadable.
         auto add = [&out](const char* name, float x, float y,
                           float w = 1.0f, float h = 1.0f,
-                          const char* label = nullptr) {
+                          const char* primary = nullptr,
+                          const char* secondary = nullptr) {
             if(const auto* key = keyByName(name)) {
                 out.push_back({key->ledId, key->name,
-                               label ? label : key->name,
-                               x, y, w, h});
+                               primary ? primary : key->legend,
+                               secondary ? secondary : "",
+                               x, y, w, h, false});
             }
         };
 
-        // 3D Media Wheel and macro column.
-        out.push_back({k3DMediaWheelLed, kMediaWheelName, "Mute",
-                       0.00f, 0.00f, 1.0f, 1.0f});
-        add("M1", 0.00f, 1.45f);
-        add("M2", 0.00f, 2.55f);
-        add("M3", 0.00f, 3.65f);
-        add("M4", 0.00f, 4.75f);
-        add("M5", 0.00f, 5.85f);
+        // The physical 3D Media Wheel is visibly larger than a keycap. The
+        // supplied product image puts it at roughly 1.3 key widths in diameter.
+        out.push_back({k3DMediaWheelLed, kMediaWheelName, "Mute", "",
+                       0.00f, 0.00f, 1.32f, 1.32f, true});
+
+        // Macro column.
+        add("M1", 0.12f, 1.52f);
+        add("M2", 0.12f, 2.62f);
+        add("M3", 0.12f, 3.72f);
+        add("M4", 0.12f, 4.82f);
+        add("M5", 0.12f, 5.92f);
 
         // Function row.
-        add("ESC",   1.35f, 0.00f, 1, 1, "Esc");
-        add("F1",    2.75f, 0.00f); add("F2", 3.75f, 0.00f);
-        add("F3",    4.75f, 0.00f); add("F4", 5.75f, 0.00f);
-        add("F5",    7.00f, 0.00f); add("F6", 8.00f, 0.00f);
-        add("F7",    9.00f, 0.00f); add("F8",10.00f, 0.00f);
-        add("F9",   11.25f, 0.00f); add("F10",12.25f,0.00f);
-        add("F11",  13.25f, 0.00f); add("F12",14.25f,0.00f);
-        add("PRINT", 16.75f, 0.00f, 1, 1, "Print");
-        add("SCRLK", 17.75f, 0.00f, 1, 1, "ScrLk");
-        add("PAUSE", 18.75f, 0.00f, 1, 1, "Pause");
+        add("ESC",   1.55f, 0.12f, 1, 1, "Esc");
+        add("F1",    2.95f, 0.12f); add("F2", 3.95f, 0.12f);
+        add("F3",    4.95f, 0.12f); add("F4", 5.95f, 0.12f);
+        add("F5",    7.20f, 0.12f); add("F6", 8.20f, 0.12f);
+        add("F7",    9.20f, 0.12f); add("F8",10.20f, 0.12f);
+        add("F9",   11.45f, 0.12f); add("F10",12.45f,0.12f);
+        add("F11",  13.45f, 0.12f); add("F12",14.45f,0.12f);
+        add("PRINT", 16.90f, 0.12f, 1, 1, "Print");
+        add("SCRLK", 17.90f, 0.12f, 1, 1, "Scr Lk");
+        add("PAUSE", 18.90f, 0.12f, 1, 1, "Pause");
 
-        // Number row. Main ANSI block ends at x=16.35; navigation starts at
-        // x=16.75, leaving the physical gap visible on a full-size keyboard.
-        float x = 1.35f;
-        add("GRAVE", x,1.45f,1,1,"`"); x += 1.0f;
-        for(const char* n : {"1","2","3","4","5","6","7","8","9","0"}) {
-            add(n,x,1.45f); x += 1.0f;
-        }
-        add("MINUS",x,1.45f,1,1,"-"); x += 1.0f;
-        add("EQUAL",x,1.45f,1,1,"="); x += 1.0f;
-        add("BACKSPACE",x,1.45f,2.0f,1,"Back");
-        add("INS", 16.75f,1.45f,1,1,"Ins");
-        add("HOME",17.75f,1.45f,1,1,"Home");
-        add("PGUP",18.75f,1.45f,1,1,"PgUp");
-        add("NUMLOCK",20.00f,1.45f,1,1,"Num");
-        add("NUMSLASH",21.00f,1.45f,1,1,"/");
-        add("NUMSTAR",22.00f,1.45f,1,1,"*");
-        add("NUMMINUS",23.00f,1.45f,1,1,"-");
+        // Main typing rows. Row pitch is 1.10 key units, matching the product
+        // image; the navigation and numpad blocks use exactly the same pitch.
+        constexpr float y1 = 1.52f;
+        constexpr float y2 = 2.62f;
+        constexpr float y3 = 3.72f;
+        constexpr float y4 = 4.82f;
+        constexpr float y5 = 5.92f;
 
-        // QWERTY row.
-        x = 1.35f;
-        add("TAB",x,2.55f,1.5f,1,"Tab"); x += 1.5f;
+        float x = 1.55f;
+        add("GRAVE", x,y1,1,1,"`","~"); x += 1.0f;
+        add("1",x,y1,1,1,"1","!"); x += 1.0f;
+        add("2",x,y1,1,1,"2","@"); x += 1.0f;
+        add("3",x,y1,1,1,"3","#"); x += 1.0f;
+        add("4",x,y1,1,1,"4","$"); x += 1.0f;
+        add("5",x,y1,1,1,"5","%"); x += 1.0f;
+        add("6",x,y1,1,1,"6","^"); x += 1.0f;
+        add("7",x,y1,1,1,"7","&"); x += 1.0f;
+        add("8",x,y1,1,1,"8","*"); x += 1.0f;
+        add("9",x,y1,1,1,"9","("); x += 1.0f;
+        add("0",x,y1,1,1,"0",")"); x += 1.0f;
+        add("MINUS",x,y1,1,1,"-","_"); x += 1.0f;
+        add("EQUAL",x,y1,1,1,"=","+"); x += 1.0f;
+        add("BACKSPACE",x,y1,2.0f,1,"Back");
+
+        // Standard six-key navigation cluster.
+        add("INS", 16.90f,y1,1,1,"Ins");
+        add("HOME",17.90f,y1,1,1,"Home");
+        add("PGUP",18.90f,y1,1,1,"PgUp");
+
+        // Standard four-column numpad. The + and Enter keys each span exactly
+        // two row pitches, so their top/bottom edges line up with neighbours.
+        add("NUMLOCK",20.20f,y1,1,1,"Num");
+        add("NUMSLASH",21.20f,y1,1,1,"/");
+        add("NUMSTAR",22.20f,y1,1,1,"*");
+        add("NUMMINUS",23.20f,y1,1,1,"-");
+
+        x = 1.55f;
+        add("TAB",x,y2,1.5f,1,"Tab"); x += 1.5f;
         for(const char* n : {"Q","W","E","R","T","Y","U","I","O","P"}) {
-            add(n,x,2.55f); x += 1.0f;
+            add(n,x,y2); x += 1.0f;
         }
-        add("LBRACKET",x,2.55f,1,1,"["); x += 1.0f;
-        add("RBRACKET",x,2.55f,1,1,"]"); x += 1.0f;
-        add("BACKSLASH",x,2.55f,1.5f,1,"\\");
-        add("DEL", 16.75f,2.55f,1,1,"Del");
-        add("END", 17.75f,2.55f,1,1,"End");
-        add("PGDN",18.75f,2.55f,1,1,"PgDn");
-        add("NUM7",20.00f,2.55f,1,1,"7");
-        add("NUM8",21.00f,2.55f,1,1,"8");
-        add("NUM9",22.00f,2.55f,1,1,"9");
-        add("NUMPLUS",23.00f,2.55f,1.0f,2.0f,"+");
+        add("LBRACKET",x,y2,1,1,"[","{"); x += 1.0f;
+        add("RBRACKET",x,y2,1,1,"]","}"); x += 1.0f;
+        add("BACKSLASH",x,y2,1.5f,1,"\\","|");
+        add("DEL", 16.90f,y2,1,1,"Del");
+        add("END", 17.90f,y2,1,1,"End");
+        add("PGDN",18.90f,y2,1,1,"PgDn");
+        add("NUM7",20.20f,y2,1,1,"7");
+        add("NUM8",21.20f,y2,1,1,"8");
+        add("NUM9",22.20f,y2,1,1,"9");
+        add("NUMPLUS",23.20f,y2,1.0f,2.10f,"+");
 
-        // Home row.
-        x = 1.35f;
-        add("CAPS",x,3.65f,1.75f,1,"Caps"); x += 1.75f;
+        x = 1.55f;
+        add("CAPS",x,y3,1.75f,1,"Caps"); x += 1.75f;
         for(const char* n : {"A","S","D","F","G","H","J","K","L"}) {
-            add(n,x,3.65f); x += 1.0f;
+            add(n,x,y3); x += 1.0f;
         }
-        add("SEMICOLON",x,3.65f,1,1,";"); x += 1.0f;
-        add("APOSTROPHE",x,3.65f,1,1,"'"); x += 1.0f;
-        add("ENTER",x,3.65f,2.25f,1,"Enter");
-        add("NUM4",20.00f,3.65f,1,1,"4");
-        add("NUM5",21.00f,3.65f,1,1,"5");
-        add("NUM6",22.00f,3.65f,1,1,"6");
+        add("SEMICOLON",x,y3,1,1,";",":"); x += 1.0f;
+        add("APOSTROPHE",x,y3,1,1,"'","\""); x += 1.0f;
+        add("ENTER",x,y3,2.25f,1,"Enter");
+        add("NUM4",20.20f,y3,1,1,"4");
+        add("NUM5",21.20f,y3,1,1,"5");
+        add("NUM6",22.20f,y3,1,1,"6");
 
-        // Shift row. The inverted-T cursor cluster is separated from the main
-        // block exactly like a conventional full-size ANSI layout.
-        x = 1.35f;
-        add("LSHIFT",x,4.75f,2.25f,1,"Shift"); x += 2.25f;
+        x = 1.55f;
+        add("LSHIFT",x,y4,2.25f,1,"Shift"); x += 2.25f;
         for(const char* n : {"Z","X","C","V","B","N","M"}) {
-            add(n,x,4.75f); x += 1.0f;
+            add(n,x,y4); x += 1.0f;
         }
-        add("COMMA",x,4.75f,1,1,","); x += 1.0f;
-        add("DOT",x,4.75f,1,1,"."); x += 1.0f;
-        add("SLASH",x,4.75f,1,1,"/"); x += 1.0f;
-        add("RSHIFT",x,4.75f,2.75f,1,"Shift");
-        add("UP",17.75f,4.75f,1,1,"↑");
-        add("NUM1",20.00f,4.75f,1,1,"1");
-        add("NUM2",21.00f,4.75f,1,1,"2");
-        add("NUM3",22.00f,4.75f,1,1,"3");
-        add("NUMENTER",23.00f,4.75f,1.0f,2.0f,"Enter");
+        add("COMMA",x,y4,1,1,",","<"); x += 1.0f;
+        add("DOT",x,y4,1,1,".",">"); x += 1.0f;
+        add("SLASH",x,y4,1,1,"/","?"); x += 1.0f;
+        add("RSHIFT",x,y4,2.75f,1,"Shift");
 
-        // Bottom row and lower half of cursor cluster.
-        x = 1.35f;
-        add("LCTRL",x,5.85f,1.25f,1,"Ctrl"); x += 1.25f;
-        add("LWIN", x,5.85f,1.25f,1,"Win"); x += 1.25f;
-        add("LALT", x,5.85f,1.25f,1,"Alt"); x += 1.25f;
-        add("SPACE",x,5.85f,6.25f,1,"Space"); x += 6.25f;
-        add("RALT", x,5.85f,1.25f,1,"Alt"); x += 1.25f;
-        add("RWIN", x,5.85f,1.25f,1,"Win"); x += 1.25f;
-        add("FN",   x,5.85f,1.25f,1,"Fn"); x += 1.25f;
-        add("RCTRL",x,5.85f,1.25f,1,"Ctrl");
-        add("LEFT", 16.75f,5.85f,1,1,"←");
-        add("DOWN", 17.75f,5.85f,1,1,"↓");
-        add("RIGHT",18.75f,5.85f,1,1,"→");
-        add("NUM0",20.00f,5.85f,2.0f,1,"0");
-        add("NUMDOT",22.00f,5.85f,1,1,".");
+        // Conventional inverted-T cursor block, centred under the six-key
+        // navigation cluster.
+        add("UP",17.90f,y4,1,1,"↑");
+        add("NUM1",20.20f,y4,1,1,"1");
+        add("NUM2",21.20f,y4,1,1,"2");
+        add("NUM3",22.20f,y4,1,1,"3");
+        add("NUMENTER",23.20f,y4,1.0f,2.10f,"Enter");
+
+        x = 1.55f;
+        add("LCTRL",x,y5,1.25f,1,"Ctrl"); x += 1.25f;
+        add("LWIN", x,y5,1.25f,1,"Win"); x += 1.25f;
+        add("LALT", x,y5,1.25f,1,"Alt"); x += 1.25f;
+        add("SPACE",x,y5,6.25f,1,"Space"); x += 6.25f;
+        add("RALT", x,y5,1.25f,1,"Alt"); x += 1.25f;
+        add("RWIN", x,y5,1.25f,1,"Win"); x += 1.25f;
+        add("FN",   x,y5,1.25f,1,"Fn"); x += 1.25f;
+        add("RCTRL",x,y5,1.25f,1,"Ctrl");
+        add("LEFT", 16.90f,y5,1,1,"←");
+        add("DOWN", 17.90f,y5,1,1,"↓");
+        add("RIGHT",18.90f,y5,1,1,"→");
+        add("NUM0",20.20f,y5,2.0f,1,"0");
+        add("NUMDOT",22.20f,y5,1,1,".");
 
         return out;
     }();
