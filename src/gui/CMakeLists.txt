@@ -16,8 +16,10 @@ add_executable(krgb
     mainwindow.cpp
     diagnosewidget.cpp
     lightmountkeyboardwidget.cpp
+    logitechkeyboardwidget.cpp
     keyboardcontroller.cpp
     keyboardcontroller_lightmount.cpp
+    keyboardcontroller_logitech.cpp
     keyboardwidget.cpp
     casecontroller.cpp
     zonegridwidget.cpp
