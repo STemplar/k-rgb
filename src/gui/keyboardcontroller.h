@@ -73,6 +73,7 @@ public:
     bool    usesLogitechG810Iso105VisualLayout() const {
         return backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_;
     }
+    bool    usesLogitechHIDPP20() const { return backend_ == Backend::LogitechHIDPP20; }
     bool    usesBeQuietLightMount() const { return backend_ == Backend::LightMount; }
     bool    supportsZoneColors() const {
         return backend_ == Backend::LogitechHIDPP20 && logitechZoneCount_ > 1;
