@@ -7,6 +7,7 @@
 
 class KColorButton;
 class KeyboardController;
+class KeyboardWidget;
 class QLabel;
 class QComboBox;
 class QPushButton;
@@ -40,6 +41,7 @@ private:
     void rebuildEffectList();
     void updateControls();
     void applyAndSave();
+    void applyPerKeyAndSave();
 
     KeyboardController* controller_ = nullptr;
     QComboBox* modeCombo_ = nullptr;
@@ -51,6 +53,12 @@ private:
     QLabel* detailLabel_ = nullptr;
     QPushButton* applyButton_ = nullptr;
     QPushButton* offButton_ = nullptr;
+
+    // This complete editor is visible only while "Per-key (custom)" is the
+    // selected Logitech mode. Normal firmware effects do not show paint tools.
+    QWidget* perKeyPanel_ = nullptr;
+    KeyboardWidget* keyboardWidget_ = nullptr;
+    QLabel* selectionLabel_ = nullptr;
 
     std::vector<EffectEntry> effects_;
     EffectSource effectSource_ = EffectSource::None;
