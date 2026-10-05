@@ -14,6 +14,7 @@ set(CMAKE_AUTOMOC ON)
 add_executable(krgb
     main.cpp
     mainwindow.cpp
+    diagnosewidget.cpp
     keyboardcontroller.cpp
     keyboardwidget.cpp
     casecontroller.cpp
