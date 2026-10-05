@@ -13,6 +13,7 @@
 
 #include "core/aw410k_device.h"
 #include "core/lightmount_device.h"
+#include "core/lightmount_effects.h"
 #include "core/logitech_hidpp20_device.h"
 
 class QSocketNotifier;
@@ -79,6 +80,32 @@ public:
         return backend_ == Backend::LogitechHIDPP20 && logitechZoneCount_ > 1;
     }
     int     zoneCount() const { return logitechZoneCount_; }
+
+    // The Light Mount's IO Center "Static" mode is a General firmware effect,
+    // not the Custom/per-key solid path used by applySolid(). Keep this explicit
+    // so the GUI can expose the native be quiet! mode without changing the
+    // semantics of the existing Custom RGB API/CLI.
+    bool applyLightMountStatic(const QColor& color, int brightnessPct) {
+        if(backend_ != Backend::LightMount || !ensureOpen()) {
+            return false;
+        }
+
+        const krgb::LightMountColor nativeColor{
+            static_cast<std::uint8_t>(color.red()),
+            static_cast<std::uint8_t>(color.green()),
+            static_cast<std::uint8_t>(color.blue()),
+        };
+        const auto effect = krgb::lightmount::makeStaticEffect(
+            nativeColor,
+            static_cast<std::uint8_t>(qBound(10, brightnessPct, 100)));
+
+        if(!lightMountDevice_.setLightingMode(krgb::LightMountLightingMode::General) ||
+           !lightMountDevice_.setGeneralEffect(effect)) {
+            Q_EMIT error(QStringLiteral("Failed to set Light Mount Static mode."));
+            return false;
+        }
+        return true;
+    }
 
 public Q_SLOTS:
     bool applySolid(const QColor& color, int brightnessPct);
