@@ -2,6 +2,8 @@
 
 #include "casecontroller.h"
 #include "keyboardcontroller.h"
+#include "core/effect_code.h"
+#include "core/lightmount_effects.h"
 
 #include <KConfigGroup>
 #include <KSharedConfig>
@@ -67,6 +69,8 @@ void writeInto(KConfigGroup& g, const LightingSettings& s) {
     g.writeEntry("kind", static_cast<int>(s.kind));
     g.writeEntry("effectMode", s.effectMode);
     g.writeEntry("color", s.color);
+    g.writeEntry("secondaryColor", s.secondaryColor);
+    g.writeEntry("effectColorMode", s.effectColorMode);
     g.writeEntry("speed", s.speed);
     g.writeEntry("direction", s.direction);
     g.writeEntry("effectPeriodMs", s.effectPeriodMs);
@@ -84,6 +88,8 @@ LightingSettings readFrom(const KConfigGroup& g) {
     s.kind       = static_cast<LightingSettings::Kind>(g.readEntry("kind", static_cast<int>(s.kind)));
     s.effectMode = g.readEntry("effectMode", s.effectMode);
     s.color      = g.readEntry("color", s.color);
+    s.secondaryColor = g.readEntry("secondaryColor", s.secondaryColor);
+    s.effectColorMode = g.readEntry("effectColorMode", s.effectColorMode);
     s.speed      = g.readEntry("speed", s.speed);
     s.direction  = g.readEntry("direction", s.direction);
     s.effectPeriodMs = g.readEntry("effectPeriodMs", s.effectPeriodMs);
@@ -96,6 +102,77 @@ LightingSettings readFrom(const KConfigGroup& g) {
     s.caseColor    = g.readEntry("caseColor", s.caseColor);
     s.caseZoneColors = decodeZoneColors(g.readEntry("caseZoneColors", QStringList()));
     return s;
+}
+
+bool applyProtocolEffect(const LightingSettings& s, KeyboardController& controller) {
+    if(!krgb::isProtocolEffectCode(s.effectMode) ||
+       krgb::protocolFromEffectCode(s.effectMode) != krgb::EffectProtocol::BeQuietMount) {
+        return false;
+    }
+
+    const auto native = static_cast<krgb::LightMountEffect>(
+        krgb::nativeEffectValue(s.effectMode));
+    const auto primary = krgb::LightMountColor{
+        static_cast<std::uint8_t>(s.color.red()),
+        static_cast<std::uint8_t>(s.color.green()),
+        static_cast<std::uint8_t>(s.color.blue())};
+    const auto secondary = krgb::LightMountColor{
+        static_cast<std::uint8_t>(s.secondaryColor.red()),
+        static_cast<std::uint8_t>(s.secondaryColor.green()),
+        static_cast<std::uint8_t>(s.secondaryColor.blue())};
+    const auto colorMode = static_cast<krgb::LightMountColorMode>(s.effectColorMode);
+    const std::uint8_t brightness = static_cast<std::uint8_t>(qBound(10, s.brightness, 100));
+    const std::uint8_t speed = static_cast<std::uint8_t>(qBound(10, s.speed, 100));
+    auto direction = static_cast<krgb::LightMountDirection>(s.direction);
+
+    krgb::LightMountGeneralEffect effect;
+    switch(native) {
+        case krgb::LightMountEffect::Static:
+            effect = krgb::lightmount::makeStaticEffect(primary, brightness);
+            break;
+        case krgb::LightMountEffect::ColorWave:
+            if(direction > krgb::LightMountDirection::Right) {
+                direction = krgb::LightMountDirection::Right;
+            }
+            if(colorMode == krgb::LightMountColorMode::Dual) {
+                effect = krgb::lightmount::makeColorWaveDualEffect(
+                    direction, brightness, speed, primary, secondary);
+            } else if(colorMode == krgb::LightMountColorMode::Gradient) {
+                effect = krgb::lightmount::makeColorWaveGradientEffect(
+                    direction, brightness, speed,
+                    krgb::lightmount::defaultRainbowGradient());
+            } else {
+                effect = krgb::lightmount::makeColorWaveSingleEffect(
+                    direction, brightness, speed, primary);
+            }
+            break;
+        case krgb::LightMountEffect::Tornado:
+            if(direction != krgb::LightMountDirection::Clockwise &&
+               direction != krgb::LightMountDirection::CounterClockwise) {
+                direction = krgb::LightMountDirection::Clockwise;
+            }
+            effect = krgb::lightmount::makeTornadoEffect(
+                direction, brightness, speed);
+            break;
+        case krgb::LightMountEffect::Breathing:
+            effect = krgb::lightmount::makeBreathingEffect(brightness, speed);
+            break;
+        case krgb::LightMountEffect::Reactive:
+            effect = krgb::lightmount::makeReactiveEffect(
+                brightness, speed, primary, secondary);
+            break;
+        case krgb::LightMountEffect::Matrix:
+            if(direction > krgb::LightMountDirection::Right) {
+                direction = krgb::LightMountDirection::Down;
+            }
+            effect = krgb::lightmount::makeMatrixEffect(
+                direction, brightness, speed);
+            break;
+        default:
+            return false;
+    }
+
+    return controller.applyLightMountGeneralEffect(effect);
 }
 
 // On first run, seed the profile registry — migrating any pre-profiles
@@ -155,10 +232,14 @@ bool LightingSettings::apply(KeyboardController& controller, CaseController* cas
     switch(kind) {
         case Solid:   return controller.applySolid(color, brightness);
         case Rainbow: return controller.applyRainbow(brightness);
-        case Effect:  return controller.applyEffect(effectMode, speed, direction, color, brightness,
-                                                     effectPeriodMs);
+        case Effect:
+            if(krgb::isProtocolEffectCode(effectMode)) {
+                return applyProtocolEffect(*this, controller);
+            }
+            return controller.applyEffect(effectMode, speed, direction, color, brightness,
+                                          effectPeriodMs);
         case PerKey:  return controller.applyPerKey(keyColors, brightness);
-        case Zones:    return controller.applyZones(keyboardZoneColors, brightness);
+        case Zones:   return controller.applyZones(keyboardZoneColors, brightness);
     }
     return false;
 }
