@@ -29,13 +29,17 @@ class KeyboardController : public QObject {
     };
 
 public:
+    static constexpr quint8 kLightMountLayoutModelBit = 0xFE;
+
     explicit KeyboardController(QObject* parent = nullptr);
     ~KeyboardController() override;
 
     bool    isConnected() const { return connected_; }
     QString devicePath() const { return path_; }
     QString modelName() const { return modelName_; }
-    quint8  modelBit() const { return modelBit_; }  // Alienware KeyboardModel::bit
+    quint8  modelBit() const {
+        return backend_ == Backend::LightMount ? kLightMountLayoutModelBit : modelBit_;
+    }
     bool    supportsAdvancedModes() const { return backend_ == Backend::Alienware; }
     bool    supportsPerKeyColors() const {
         return backend_ == Backend::Alienware ||
