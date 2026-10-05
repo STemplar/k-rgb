@@ -1,6 +1,8 @@
 #include "keyboardcontroller.h"
 
 #include "core/keymap.h"
+#include "core/lightmount_effects.h"
+#include "core/lightmount_keymap.h"
 #include "core/logitech_g610_g810_keymap.h"
 #include "core/logitech_g810_iso105_visual.h"
 
@@ -41,6 +43,28 @@ bool readSysfsHex(const fs::path& path, unsigned& value) {
     return !in.fail();
 }
 
+std::uint8_t lightMountSpeed(int speedValue) {
+    // The shared GUI currently exposes Slow/Normal/Fast. The Light Mount
+    // protocol accepts 10..100; these values preserve the existing ordering
+    // where a lower value means a faster animation.
+    switch(static_cast<Speed>(speedValue)) {
+        case Speed::Slowest: return 80;
+        case Speed::Normal:  return 50;
+        case Speed::Fastest: return 20;
+    }
+    return 50;
+}
+
+krgb::LightMountDirection lightMountDirection(int directionValue) {
+    switch(static_cast<Direction>(directionValue)) {
+        case Direction::Up:    return krgb::LightMountDirection::Up;
+        case Direction::Down:  return krgb::LightMountDirection::Down;
+        case Direction::Left:  return krgb::LightMountDirection::Left;
+        case Direction::Right: return krgb::LightMountDirection::Right;
+    }
+    return krgb::LightMountDirection::Right;
+}
+
 } // namespace
 
 KeyboardController::KeyboardController(QObject* parent)
@@ -59,6 +83,7 @@ KeyboardController::~KeyboardController() {
 void KeyboardController::refresh() {
     const krgb::KeyboardModel* model = nullptr;
     const std::string alienwarePath = AW410KDevice::findDevice(&model);
+    const std::string lightMountPath = krgb::LightMountDevice::findDevicePath();
 
     bool nowConnected = false;
     QString newPath;
@@ -73,6 +98,20 @@ void KeyboardController::refresh() {
         newModelName = model ? QString::fromLatin1(model->name) : QString();
         newModelBit = model ? model->bit : krgb::kAllModels;
         newBackend = Backend::Alienware;
+        if(lightMountDevice_.isOpen()) {
+            lightMountDevice_.close();
+        }
+        if(logitechDevice_.isOpen()) {
+            logitechDevice_.close();
+        }
+    } else if(!lightMountPath.empty()) {
+        nowConnected = true;
+        newPath = QString::fromStdString(lightMountPath);
+        newModelName = QStringLiteral("be quiet! Light Mount");
+        newBackend = Backend::LightMount;
+        if(device_.isOpen()) {
+            device_.close();
+        }
         if(logitechDevice_.isOpen()) {
             logitechDevice_.close();
         }
@@ -127,6 +166,9 @@ void KeyboardController::refresh() {
             if(device_.isOpen()) {
                 device_.close();
             }
+            if(lightMountDevice_.isOpen()) {
+                lightMountDevice_.close();
+            }
         }
     }
 
@@ -170,6 +212,9 @@ void KeyboardController::refresh() {
             if(device_.isOpen()) {
                 device_.close();
             }
+            if(lightMountDevice_.isOpen()) {
+                lightMountDevice_.close();
+            }
             if(logitechDevice_.isOpen()) {
                 logitechDevice_.close();
             }
@@ -179,7 +224,7 @@ void KeyboardController::refresh() {
 }
 
 namespace {
-// Bit identifying the keys the currently-open device supports.
+// Bit identifying the keys the currently-open Alienware device supports.
 std::uint8_t activeBit(const krgb::AW410KDevice& dev) {
     return dev.model() ? dev.model()->bit : krgb::kAllModels;
 }
@@ -192,6 +237,18 @@ bool KeyboardController::ensureOpen() {
         }
         std::string err;
         if(!logitechDevice_.openKeyboard(&err)) {
+            Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
+    }
+
+    if(backend_ == Backend::LightMount) {
+        if(lightMountDevice_.isOpen()) {
+            return true;
+        }
+        std::string err;
+        if(!lightMountDevice_.open(&err)) {
             Q_EMIT error(QString::fromStdString(err));
             return false;
         }
@@ -229,6 +286,14 @@ bool KeyboardController::applySolid(const QColor& color, int brightnessPct) {
         return true;
     }
 
+    if(backend_ == Backend::LightMount) {
+        if(!lightMountDevice_.setSolid(c.red(), c.green(), c.blue())) {
+            Q_EMIT error(i18n("Failed to set Light Mount solid colour."));
+            return false;
+        }
+        return true;
+    }
+
     if(!device_.setSolid(c.red(), c.green(), c.blue())) {
         Q_EMIT error(i18n("Failed to set solid colour."));
         return false;
@@ -243,6 +308,29 @@ bool KeyboardController::applyRainbow(int brightnessPct) {
     if(!ensureOpen()) {
         return false;
     }
+
+    if(backend_ == Backend::LightMount) {
+        const qreal v = qBound(0, brightnessPct, 100) / 100.0;
+        std::vector<krgb::LightMountLedColor> leds;
+        leds.reserve(krgb::lightmount::kKeys.size());
+        const std::size_t total = krgb::lightmount::kKeys.size();
+        for(std::size_t i = 0; i < total; ++i) {
+            const QColor c = QColor::fromHsvF(
+                total ? static_cast<qreal>(i) / total : 0.0, 1.0, v);
+            leds.push_back({
+                krgb::lightmount::kKeys[i].ledId,
+                static_cast<std::uint8_t>(c.red()),
+                static_cast<std::uint8_t>(c.green()),
+                static_cast<std::uint8_t>(c.blue()),
+            });
+        }
+        if(!lightMountDevice_.setCustomMode() || !lightMountDevice_.setLeds(leds)) {
+            Q_EMIT error(i18n("Failed to set Light Mount static rainbow."));
+            return false;
+        }
+        return true;
+    }
+
     if(backend_ == Backend::LogitechHIDPP20) {
         if(!logitechG810Iso105Visual_) {
             Q_EMIT error(i18n("Static per-key rainbow is not available for this Logitech layout."));
@@ -300,6 +388,7 @@ bool KeyboardController::applyRainbow(int brightnessPct) {
         }
         return true;
     }
+
     const qreal v = qBound(0, brightnessPct, 100) / 100.0;
     const std::uint8_t bit = activeBit(device_);
     const std::size_t total = krgb::modelKeyCount(bit);
@@ -331,6 +420,28 @@ bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, in
     if(!ensureOpen()) {
         return false;
     }
+
+    if(backend_ == Backend::LightMount) {
+        const int pct = qBound(0, brightnessPct, 100);
+        std::vector<krgb::LightMountLedColor> leds;
+        leds.reserve(krgb::lightmount::kKeys.size());
+        for(const auto& key : krgb::lightmount::kKeys) {
+            const QColor source =
+                keyColors.value(QString::fromLatin1(key.name), QColor(0, 0, 0));
+            leds.push_back({
+                key.ledId,
+                static_cast<std::uint8_t>(source.red() * pct / 100),
+                static_cast<std::uint8_t>(source.green() * pct / 100),
+                static_cast<std::uint8_t>(source.blue() * pct / 100),
+            });
+        }
+        if(!lightMountDevice_.setCustomMode() || !lightMountDevice_.setLeds(leds)) {
+            Q_EMIT error(i18n("Failed to set Light Mount per-key colours."));
+            return false;
+        }
+        return true;
+    }
+
     if(backend_ == Backend::LogitechHIDPP20) {
         if(!logitechG810Iso105Visual_) {
             Q_EMIT error(i18n("Per-key GUI geometry is not available for this Logitech layout."));
@@ -392,6 +503,7 @@ bool KeyboardController::applyPerKey(const QHash<QString, QColor>& keyColors, in
         }
         return true;
     }
+
     const int pct = qBound(0, brightnessPct, 100);
     const std::uint8_t bit = activeBit(device_);
     std::vector<krgb::KeyColor> keys;
@@ -458,6 +570,56 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
     }
 
     const auto mode = static_cast<Mode>(modeValue);
+
+    if(backend_ == Backend::LightMount) {
+        const std::uint8_t brightness = static_cast<std::uint8_t>(
+            qBound(10, brightnessPct, 100));
+        const std::uint8_t speed = lightMountSpeed(speedValue);
+        const QColor c = scaled(color, 100);
+        const krgb::LightMountColor selected{
+            static_cast<std::uint8_t>(c.red()),
+            static_cast<std::uint8_t>(c.green()),
+            static_cast<std::uint8_t>(c.blue()),
+        };
+
+        krgb::LightMountGeneralEffect effect;
+        switch(mode) {
+            case Mode::Breathing:
+                effect = krgb::lightmount::makeBreathingEffect(brightness, speed);
+                break;
+            case Mode::Pulse:
+                effect = krgb::lightmount::makeReactiveEffect(
+                    brightness, speed, selected, {0, 0, 0});
+                break;
+            case Mode::Spectrum:
+                effect = krgb::lightmount::makeTornadoEffect(
+                    krgb::LightMountDirection::Clockwise, brightness, speed);
+                break;
+            case Mode::SingleWave:
+                effect = krgb::lightmount::makeColorWaveSingleEffect(
+                    lightMountDirection(directionValue), brightness, speed, selected);
+                break;
+            case Mode::RainbowWave:
+                effect = krgb::lightmount::makeColorWaveGradientEffect(
+                    lightMountDirection(directionValue), brightness, speed,
+                    krgb::lightmount::defaultRainbowGradient());
+                break;
+            case Mode::Scanner:
+                effect = krgb::lightmount::makeMatrixEffect(
+                    lightMountDirection(directionValue), brightness, speed);
+                break;
+            default:
+                Q_EMIT error(i18n("This effect is not implemented for the Light Mount."));
+                return false;
+        }
+
+        if(!lightMountDevice_.setLightingMode(krgb::LightMountLightingMode::General) ||
+           !lightMountDevice_.setGeneralEffect(effect)) {
+            Q_EMIT error(i18n("Failed to set Light Mount firmware effect."));
+            return false;
+        }
+        return true;
+    }
 
     if(backend_ == Backend::LogitechHIDPP20) {
         if(mode == Mode::Pulse && logitechG810Iso105Visual_) {
@@ -801,6 +963,13 @@ bool KeyboardController::applyOff() {
         std::string err;
         if(!logitechDevice_.setSolid(0, 0, 0, &err)) {
             Q_EMIT error(QString::fromStdString(err));
+            return false;
+        }
+        return true;
+    }
+    if(backend_ == Backend::LightMount) {
+        if(!lightMountDevice_.setLightingMode(krgb::LightMountLightingMode::Off)) {
+            Q_EMIT error(i18n("Failed to turn Light Mount lighting off."));
             return false;
         }
         return true;
