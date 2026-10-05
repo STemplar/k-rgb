@@ -52,18 +52,20 @@ public:
             return true;
         }
         if(backend_ == Backend::LightMount) {
+            // Compatibility path for the legacy shared page. The dedicated
+            // Light Mount page uses native BeQuietMountEffect values instead.
             const auto mode = static_cast<krgb::Mode>(modeValue);
             return mode == krgb::Mode::Breathing ||
-                   mode == krgb::Mode::Pulse ||       // IO Center Reactive
-                   mode == krgb::Mode::Spectrum ||    // IO Center Tornado
-                   mode == krgb::Mode::SingleWave ||  // IO Center Color Wave, single colour
-                   mode == krgb::Mode::RainbowWave || // IO Center Color Wave, rainbow gradient
-                   mode == krgb::Mode::Scanner;       // IO Center Matrix
+                   mode == krgb::Mode::Pulse ||
+                   mode == krgb::Mode::Spectrum ||
+                   mode == krgb::Mode::SingleWave ||
+                   mode == krgb::Mode::RainbowWave ||
+                   mode == krgb::Mode::Scanner;
         }
         if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
             const auto mode = static_cast<krgb::Mode>(modeValue);
             return mode == krgb::Mode::Breathing ||
-                   mode == krgb::Mode::Pulse ||       // LGS Key Press (software)
+                   mode == krgb::Mode::Pulse ||
                    mode == krgb::Mode::Spectrum ||
                    mode == krgb::Mode::RainbowWave ||
                    mode == krgb::Mode::Scanner;
@@ -79,6 +81,11 @@ public:
         return backend_ == Backend::LogitechHIDPP20 && logitechZoneCount_ > 1;
     }
     int     zoneCount() const { return logitechZoneCount_; }
+
+    // Native Light Mount General-effect entry point. Unlike applyEffect(),
+    // this carries the be quiet! protocol's own effect/direction/colour-mode
+    // vocabulary and never translates through Alienware or Logitech enums.
+    bool applyLightMountGeneralEffect(const krgb::LightMountGeneralEffect& effect);
 
 public Q_SLOTS:
     bool applySolid(const QColor& color, int brightnessPct);
