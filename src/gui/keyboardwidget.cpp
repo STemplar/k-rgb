@@ -131,7 +131,7 @@ void KeyboardWidget::setKeyColors(const QHash<QString, QColor>& colors) {
 }
 
 void KeyboardWidget::setModelBit(quint8 bit) {
-    // MainWindow historically passes only the Alienware model bit.  Reserve a
+    // MainWindow historically passes only the Alienware model bit. Reserve a
     // private sentinel for the Light Mount so the same call can switch to the
     // supplied US ANSI geometry without coupling MainWindow to that backend.
     if(bit == kLightMountLayoutModelBit) {
@@ -183,7 +183,7 @@ void KeyboardWidget::recomputeLayout() {
                               qMax(1.0, element.w * unit - kKeyInset),
                               qMax(1.0, element.h * unit - kKeyInset));
             const QString name = QString::fromLatin1(def->name);
-            rects_.push_back({name, labelFor(name), cell});
+            rects_.push_back({name, labelFor(name), QString(), cell, false});
         }
         return;
     }
@@ -197,8 +197,13 @@ void KeyboardWidget::recomputeLayout() {
                               qMax(1.0, key.w * unit - kKeyInset),
                               qMax(1.0, key.h * unit - kKeyInset));
             const QString name = QString::fromLatin1(key.name);
-            const QString label = QString::fromUtf8(key.label);
-            rects_.push_back({name, label.isEmpty() ? labelFor(name) : label, cell});
+            const QString primary = QString::fromUtf8(key.primary);
+            const QString secondary = QString::fromUtf8(key.secondary);
+            rects_.push_back({name,
+                              primary.isEmpty() ? labelFor(name) : primary,
+                              secondary,
+                              cell,
+                              key.round});
         }
         return;
     }
@@ -214,13 +219,24 @@ void KeyboardWidget::recomputeLayout() {
                           k.w * unit - kKeyInset,
                           k.h * unit - kKeyInset);
         const QString name = QString::fromLatin1(k.name);
-        rects_.push_back({name, labelFor(name), cell});
+        rects_.push_back({name, labelFor(name), QString(), cell, false});
     }
 }
 
 const QString KeyboardWidget::keyAt(const QPointF& p) const {
     for(const KeyRect& r : rects_) {
-        if(r.cell.contains(p)) {
+        if(r.round) {
+            const QPointF center = r.cell.center();
+            const double rx = r.cell.width() / 2.0;
+            const double ry = r.cell.height() / 2.0;
+            if(rx > 0.0 && ry > 0.0) {
+                const double dx = (p.x() - center.x()) / rx;
+                const double dy = (p.y() - center.y()) / ry;
+                if(dx * dx + dy * dy <= 1.0) {
+                    return r.name;
+                }
+            }
+        } else if(r.cell.contains(p)) {
             return r.name;
         }
     }
@@ -232,11 +248,20 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
     painter.fillRect(rect(), kBackground);
 
-    QFont font = painter.font();
-    font.setPointSizeF(qMax(6.0, font.pointSizeF() - 1.0));
-    painter.setFont(font);
+    const bool lightMount = layoutKind_ == LayoutKind::BeQuietLightMountAnsi;
+
+    QFont baseFont = painter.font();
+    if(lightMount) {
+        // be quiet! uses a clean, narrow sans-serif legend. Prefer Noto Sans,
+        // then let Qt/fontconfig fall back when it is unavailable.
+        baseFont.setFamilies({QStringLiteral("Noto Sans"),
+                              QStringLiteral("DejaVu Sans"),
+                              QStringLiteral("sans-serif")});
+        baseFont.setWeight(QFont::Medium);
+    }
 
     for(const KeyRect& r : rects_) {
         const QColor fill = colors_.value(r.name, kUnset);
@@ -244,12 +269,63 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
 
         painter.setBrush(fill);
         painter.setPen(QPen(sel ? kSelect : QColor(0, 0, 0, 160), sel ? 2.0 : 1.0));
-        painter.drawRoundedRect(r.cell, 3.0, 3.0);
+        if(r.round) {
+            painter.drawEllipse(r.cell);
+            QRectF inner = r.cell.adjusted(r.cell.width() * 0.13,
+                                           r.cell.height() * 0.13,
+                                           -r.cell.width() * 0.13,
+                                           -r.cell.height() * 0.13);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(QColor(180, 180, 180, 90), 1.0));
+            painter.drawEllipse(inner);
+        } else {
+            painter.drawRoundedRect(r.cell, lightMount ? 2.0 : 3.0,
+                                    lightMount ? 2.0 : 3.0);
+        }
 
-        // Label colour contrasts with the key fill.
         const double lum = 0.299 * fill.red() + 0.587 * fill.green() + 0.114 * fill.blue();
-        painter.setPen(lum > 140 ? QColor(20, 20, 20) : QColor(225, 225, 225));
-        if(r.cell.width() >= 10.0 && r.cell.height() >= 8.0) {
+        const QColor textColor = lum > 140 ? QColor(20, 20, 20) : QColor(225, 225, 225);
+        painter.setPen(textColor);
+
+        if(r.cell.width() < 10.0 || r.cell.height() < 8.0) {
+            continue;
+        }
+
+        if(lightMount) {
+            QFont primaryFont = baseFont;
+            primaryFont.setPixelSize(qBound(9, static_cast<int>(r.cell.height() * 0.34), 16));
+            painter.setFont(primaryFont);
+
+            if(r.round) {
+                painter.drawText(r.cell, Qt::AlignCenter, QStringLiteral("🔇"));
+                continue;
+            }
+
+            if(!r.secondaryLabel.isEmpty() && r.cell.width() >= 24.0) {
+                // Match the printed keycaps: primary legend slightly left and
+                // lower, shifted glyph smaller toward the upper-right.
+                const QRectF primaryRect = r.cell.adjusted(r.cell.width() * 0.12,
+                                                           r.cell.height() * 0.22,
+                                                           -r.cell.width() * 0.38,
+                                                           -r.cell.height() * 0.08);
+                painter.drawText(primaryRect, Qt::AlignCenter, r.label);
+
+                QFont secondaryFont = primaryFont;
+                secondaryFont.setPixelSize(qMax(8, primaryFont.pixelSize() - 2));
+                painter.setFont(secondaryFont);
+                const QRectF secondaryRect = r.cell.adjusted(r.cell.width() * 0.50,
+                                                             r.cell.height() * 0.04,
+                                                             -r.cell.width() * 0.08,
+                                                             -r.cell.height() * 0.48);
+                painter.drawText(secondaryRect, Qt::AlignCenter, r.secondaryLabel);
+            } else {
+                painter.drawText(r.cell.adjusted(2.0, 1.0, -2.0, -1.0),
+                                 Qt::AlignCenter, r.label);
+            }
+        } else {
+            QFont font = painter.font();
+            font.setPointSizeF(qMax(6.0, font.pointSizeF() - 1.0));
+            painter.setFont(font);
             painter.drawText(r.cell, Qt::AlignCenter, r.label);
         }
     }
