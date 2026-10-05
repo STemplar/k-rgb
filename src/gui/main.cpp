@@ -1,11 +1,13 @@
 #include "casecontroller.h"
 #include "diagnosewidget.h"
 #include "keyboardcontroller.h"
+#include "lightmountkeyboardwidget.h"
 #include "mainwindow.h"
 #include "settings.h"
 
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QIcon>
 #include <QKeySequence>
 #include <QMenu>
@@ -70,14 +72,76 @@ int main(int argc, char** argv) {
         }
     }
 
-    // MainWindow owns the application's tab widget. Keep diagnostics as the
-    // second tab so device information is adjacent to the Keyboard controls,
-    // while the optional Case tab remains after it.
     if(auto* tabs = window->findChild<QTabWidget*>()) {
-        tabs->insertTab(1,
+        QWidget* legacyKeyboardPage = tabs->count() > 0 ? tabs->widget(0) : nullptr;
+
+        // be quiet! uses its own effect vocabulary and wire values. Do not map
+        // Light Mount modes through the Alienware/Logitech page; give it a
+        // protocol-native page instead. The old page remains available for the
+        // other backends and retains the existing per-vendor logic there.
+        auto* lightMountPage = new LightMountKeyboardWidget(controller, tabs);
+        tabs->insertTab(0, lightMountPage,
+                        QIcon::fromTheme(QStringLiteral("input-keyboard")),
+                        i18n("Keyboard"));
+
+        // Keep diagnostics as the next visible tab. The hidden backend-specific
+        // page does not occupy visible tab-bar space.
+        const int diagnoseInsert = legacyKeyboardPage
+            ? tabs->indexOf(legacyKeyboardPage) + 1
+            : 1;
+        tabs->insertTab(diagnoseInsert,
                         new DiagnoseWidget(controller, tabs),
                         QIcon::fromTheme(QStringLiteral("dialog-information")),
                         i18n("Diagnose"));
+
+        const auto updateKeyboardPages = [tabs, controller, lightMountPage,
+                                          legacyKeyboardPage]() {
+            const bool lightMount = controller->usesBeQuietLightMount();
+            const int nativeIndex = tabs->indexOf(lightMountPage);
+            if(nativeIndex >= 0) {
+                tabs->setTabVisible(nativeIndex, lightMount);
+            }
+            if(legacyKeyboardPage) {
+                const int legacyIndex = tabs->indexOf(legacyKeyboardPage);
+                if(legacyIndex >= 0) {
+                    tabs->setTabVisible(legacyIndex, !lightMount);
+                }
+            }
+
+            if(lightMount) {
+                lightMountPage->loadCurrentProfile();
+                if(tabs->currentWidget() == legacyKeyboardPage) {
+                    tabs->setCurrentWidget(lightMountPage);
+                }
+            } else if(tabs->currentWidget() == lightMountPage && legacyKeyboardPage) {
+                tabs->setCurrentWidget(legacyKeyboardPage);
+            }
+        };
+
+        QObject::connect(controller, &KeyboardController::connectionChanged,
+                         window, [updateKeyboardPages](bool, const QString&) {
+                             updateKeyboardPages();
+                         });
+        QObject::connect(tabs, &QTabWidget::currentChanged, window,
+                         [tabs, lightMountPage](int index) {
+                             if(index >= 0 && tabs->widget(index) == lightMountPage) {
+                                 lightMountPage->loadCurrentProfile();
+                             }
+                         });
+
+        // Keep the native page synchronized with the shared profile selector.
+        for(auto* combo : window->findChildren<QComboBox*>()) {
+            if(combo->accessibleName() == i18n("Profile")) {
+                QObject::connect(combo, &QComboBox::currentTextChanged,
+                                 lightMountPage,
+                                 [lightMountPage](const QString&) {
+                                     lightMountPage->loadCurrentProfile();
+                                 });
+                break;
+            }
+        }
+
+        updateKeyboardPages();
     }
 
     QObject::connect(&service, &KDBusService::activateRequested, window,
