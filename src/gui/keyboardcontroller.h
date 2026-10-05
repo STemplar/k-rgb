@@ -40,6 +40,7 @@ public:
     quint8  modelBit() const {
         return backend_ == Backend::LightMount ? kLightMountLayoutModelBit : modelBit_;
     }
+    bool    usesAlienware() const { return backend_ == Backend::Alienware; }
     bool    supportsAdvancedModes() const { return backend_ == Backend::Alienware; }
     bool    supportsPerKeyColors() const {
         return backend_ == Backend::Alienware ||
@@ -52,8 +53,8 @@ public:
             return true;
         }
         if(backend_ == Backend::LightMount) {
-            // Compatibility path for the legacy shared page. The dedicated
-            // Light Mount page uses native BeQuietMountEffect values instead.
+            // Compatibility path for profiles created before the dedicated
+            // Light Mount page. Native Light Mount UI uses BeQuietMountEffect.
             const auto mode = static_cast<krgb::Mode>(modeValue);
             return mode == krgb::Mode::Breathing ||
                    mode == krgb::Mode::Pulse ||
@@ -63,6 +64,8 @@ public:
                    mode == krgb::Mode::Scanner;
         }
         if(backend_ == Backend::LogitechHIDPP20 && logitechG810Iso105Visual_) {
+            // Compatibility path for old profiles. New Logitech UI enumerates
+            // its HID++ effects directly from feature 0x8070/0x8071.
             const auto mode = static_cast<krgb::Mode>(modeValue);
             return mode == krgb::Mode::Breathing ||
                    mode == krgb::Mode::Pulse ||
@@ -86,6 +89,22 @@ public:
     // this carries the be quiet! protocol's own effect/direction/colour-mode
     // vocabulary and never translates through Alienware or Logitech enums.
     bool applyLightMountGeneralEffect(const krgb::LightMountGeneralEffect& effect);
+
+    // Logitech pages query HID++ at runtime instead of reusing Alienware mode
+    // IDs. 0x8070/0x8071 information comes directly from the device-reported
+    // Feature Set and effect topology.
+    bool getLogitechColorLed8070Info(krgb::LogitechHIDPP20ColorLedInfo& info,
+                                     QString* error = nullptr);
+    bool getLogitechRgbEffects8071Info(krgb::LogitechHIDPP20RgbEffectsInfo& info,
+                                       QString* error = nullptr);
+
+    // Apply an effect advertised by HID++ 0x8070. The effect ID is a Logitech
+    // HID++ effect ID; period/intensity/direction follow the x8070 definitions.
+    bool applyLogitechColorLed8070Effect(std::uint16_t effectId,
+                                         const QColor& color,
+                                         int periodMs,
+                                         int intensity,
+                                         int direction);
 
 public Q_SLOTS:
     bool applySolid(const QColor& color, int brightnessPct);
