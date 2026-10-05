@@ -15,7 +15,9 @@ add_executable(krgb
     main.cpp
     mainwindow.cpp
     diagnosewidget.cpp
+    lightmountkeyboardwidget.cpp
     keyboardcontroller.cpp
+    keyboardcontroller_lightmount.cpp
     keyboardwidget.cpp
     casecontroller.cpp
     zonegridwidget.cpp
