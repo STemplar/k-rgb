@@ -115,11 +115,13 @@ QString LogitechKeyboardWidget::effectName(std::uint16_t id) const {
 }
 
 bool LogitechKeyboardWidget::effectIsImplemented(std::uint16_t id) const {
-    return id == 1 || id == 3 || id == 4 || id == 5 || id == 10;
+    return effectSource_ == EffectSource::ColorLed8070 &&
+           (id == 1 || id == 3 || id == 4 || id == 5 || id == 10);
 }
 
 void LogitechKeyboardWidget::refreshFromDevice() {
     effects_.clear();
+    effectSource_ = EffectSource::None;
     if(!controller_->usesLogitechHIDPP20()) {
         rebuildEffectList();
         return;
@@ -128,6 +130,7 @@ void LogitechKeyboardWidget::refreshFromDevice() {
     krgb::LogitechHIDPP20ColorLedInfo info;
     QString error;
     if(controller_->getLogitechColorLed8070Info(info, &error)) {
+        effectSource_ = EffectSource::ColorLed8070;
         std::set<std::uint16_t> seen;
         for(const auto& zone : info.zones) {
             for(const auto& effect : zone.effects) {
@@ -138,13 +141,11 @@ void LogitechKeyboardWidget::refreshFromDevice() {
                 }
             }
         }
-        std::sort(effects_.begin(), effects_.end(), [](const auto& a, const auto& b) {
-            return a.id < b.id;
-        });
     } else {
         krgb::LogitechHIDPP20RgbEffectsInfo rgb;
         QString rgbError;
         if(controller_->getLogitechRgbEffects8071Info(rgb, &rgbError)) {
+            effectSource_ = EffectSource::RgbEffects8071;
             std::set<std::uint16_t> seen;
             for(const auto& cluster : rgb.clusters) {
                 for(const auto& effect : cluster.effects) {
@@ -155,12 +156,14 @@ void LogitechKeyboardWidget::refreshFromDevice() {
                     }
                 }
             }
-            detailLabel_->setText(i18n("This keyboard exposes HID++ 0x8071 RGB Effects. Read-only discovery is available; write support for 0x8071 is not implemented yet."));
         } else {
             detailLabel_->setText(error.isEmpty() ? rgbError : error);
         }
     }
 
+    std::sort(effects_.begin(), effects_.end(), [](const auto& a, const auto& b) {
+        return a.id < b.id;
+    });
     rebuildEffectList();
     loadCurrentProfile();
 }
@@ -185,18 +188,23 @@ void LogitechKeyboardWidget::updateControls() {
     const bool effect = value >= 0;
     const bool implemented = !effect || effectIsImplemented(static_cast<std::uint16_t>(value));
 
-    bool color = value == -1 || value == 1 || value == 5 || value == 10;
-    bool period = value == 3 || value == 4 || value == 10;
-    bool direction = value == 4;
+    const bool color = value == -1 || value == 1 || value == 5 || value == 10;
+    const bool period = value == 3 || value == 4 || value == 10;
+    const bool direction = value == 4;
 
     colorButton_->setEnabled(color);
-    periodSpin_->setEnabled(period);
-    directionCombo_->setEnabled(direction);
-    intensitySlider_->setEnabled(effect && value != 1);
+    periodSpin_->setEnabled(period && implemented);
+    directionCombo_->setEnabled(direction && implemented);
+    intensitySlider_->setEnabled(effect && value != 1 && implemented);
     applyButton_->setEnabled(controller_->isConnected() && implemented);
 
+    if(effectSource_ == EffectSource::RgbEffects8071 && effect) {
+        detailLabel_->setText(i18n("This effect is reported by HID++ 0x8071 RGB Effects. It is intentionally read-only until the 0x8071 software-control and setRgbClusterEffect path is implemented."));
+        return;
+    }
+
     if(effect && !implemented) {
-        detailLabel_->setText(i18n("The device reports this HID++ effect, but k-rgb does not yet implement its parameter writer."));
+        detailLabel_->setText(i18n("The device reports this HID++ 0x8070 effect, but k-rgb does not yet implement its parameter writer."));
     } else if(effect) {
         for(const auto& e : effects_) {
             if(e.id == static_cast<std::uint16_t>(value)) {
@@ -204,9 +212,6 @@ void LogitechKeyboardWidget::updateControls() {
                     .arg(e.id, 4, 16, QLatin1Char('0'))
                     .arg(e.capabilities, 4, 16, QLatin1Char('0'))
                     .arg(e.periodMs));
-                if(e.periodMs > 0 && loading_) {
-                    periodSpin_->setValue(e.periodMs);
-                }
                 break;
             }
         }
@@ -216,9 +221,7 @@ void LogitechKeyboardWidget::updateControls() {
 }
 
 void LogitechKeyboardWidget::applyAndSave() {
-    if(loading_) {
-        return;
-    }
+    if(loading_) return;
 
     const int value = modeCombo_->currentData().toInt();
     LightingSettings s = LightingSettings::load(Profiles::current());
@@ -238,11 +241,11 @@ void LogitechKeyboardWidget::applyAndSave() {
         return;
     } else {
         const auto id = static_cast<std::uint16_t>(value);
-        if(!effectIsImplemented(id)) {
-            return;
-        }
+        if(!effectIsImplemented(id)) return;
+
         s.kind = LightingSettings::Effect;
-        s.effectMode = krgb::makeProtocolEffectCode(krgb::EffectProtocol::LogitechHIDPP2, id);
+        s.effectMode = krgb::makeProtocolEffectCode(
+            krgb::EffectProtocol::LogitechHIDPP2, id);
         s.color = colorButton_->color();
         s.effectPeriodMs = periodSpin_->value();
         s.brightness = intensitySlider_->value();
@@ -256,15 +259,11 @@ void LogitechKeyboardWidget::applyAndSave() {
         }
     }
 
-    if(ok) {
-        s.save(Profiles::current());
-    }
+    if(ok) s.save(Profiles::current());
 }
 
 void LogitechKeyboardWidget::loadCurrentProfile() {
-    if(!controller_->usesLogitechHIDPP20() || modeCombo_->count() == 0) {
-        return;
-    }
+    if(!controller_->usesLogitechHIDPP20() || modeCombo_->count() == 0) return;
 
     const LightingSettings s = LightingSettings::load(Profiles::current());
     loading_ = true;
@@ -274,24 +273,21 @@ void LogitechKeyboardWidget::loadCurrentProfile() {
         wanted = -3;
     } else if(s.kind == LightingSettings::PerKey) {
         wanted = -2;
-    } else if(s.kind == LightingSettings::Effect && krgb::isProtocolEffectCode(s.effectMode) &&
-              krgb::protocolFromEffectCode(s.effectMode) == krgb::EffectProtocol::LogitechHIDPP2) {
+    } else if(s.kind == LightingSettings::Effect &&
+              krgb::isProtocolEffectCode(s.effectMode) &&
+              krgb::protocolFromEffectCode(s.effectMode) ==
+                  krgb::EffectProtocol::LogitechHIDPP2) {
         wanted = static_cast<int>(krgb::nativeEffectValue(s.effectMode));
     }
 
     const int idx = modeCombo_->findData(wanted);
     modeCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
-    if(s.color.isValid()) {
-        colorButton_->setColor(s.color);
-    }
-    if(s.effectPeriodMs > 0) {
+    if(s.color.isValid()) colorButton_->setColor(s.color);
+    if(s.effectPeriodMs > 0)
         periodSpin_->setValue(qBound(1, s.effectPeriodMs, 65535));
-    }
     intensitySlider_->setValue(qBound(1, s.brightness, 100));
     const int di = directionCombo_->findData(s.direction);
-    if(di >= 0) {
-        directionCombo_->setCurrentIndex(di);
-    }
+    if(di >= 0) directionCombo_->setCurrentIndex(di);
 
     loading_ = false;
     updateControls();
