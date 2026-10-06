@@ -91,61 +91,26 @@ bool isBeQuietLayout(KeyboardWidget::LayoutKind kind) {
 
 void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
                          const QColor& color) {
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing, true);
-
+    // Bundled Material Design Icons keep the wheel consistent across themes.
+    static const QIcon volumeLow(QStringLiteral(":/branding/mdi-volume-low.svg"));
+    static const QIcon cancel(QStringLiteral(":/branding/mdi-cancel.svg"));
     const qreal d = qMin(cell.width(), cell.height());
-    const QRectF icon(cell.center().x() - d * 0.25,
-                      cell.center().y() - d * 0.22,
-                      d * 0.50, d * 0.44);
-
-    static const QIcon volumeLow = QIcon::fromTheme(QStringLiteral("audio-volume-low"));
-    static const QIcon cancel = QIcon::fromTheme(QStringLiteral("dialog-cancel"));
-    if(!volumeLow.isNull() && !cancel.isNull()) {
-        const auto drawIcon = [&](const QIcon& symbol, const QRectF& target) {
-            QPixmap pixmap = symbol.pixmap(QSize(64, 64));
-            QPainter tint(&pixmap);
-            tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            tint.fillRect(pixmap.rect(), color);
-            tint.end();
-            painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()));
-        };
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        drawIcon(volumeLow, QRectF(cell.center().x() - d * 0.34,
-                                  cell.center().y() - d * 0.24, d * 0.48, d * 0.48));
-        drawIcon(cancel, QRectF(cell.center().x() + d * 0.08,
-                               cell.center().y() - d * 0.18, d * 0.36, d * 0.36));
-        painter.restore();
-        return;
-    }
-
-    QPen pen(color, qMax<qreal>(1.2, d * 0.035));
-    pen.setCapStyle(Qt::RoundCap);
-    pen.setJoinStyle(Qt::RoundJoin);
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-
-    QPainterPath speaker;
-    speaker.moveTo(icon.left(), icon.center().y() - icon.height() * 0.16);
-    speaker.lineTo(icon.left() + icon.width() * 0.22,
-                   icon.center().y() - icon.height() * 0.16);
-    speaker.lineTo(icon.left() + icon.width() * 0.46, icon.top());
-    speaker.lineTo(icon.left() + icon.width() * 0.46, icon.bottom());
-    speaker.lineTo(icon.left() + icon.width() * 0.22,
-                   icon.center().y() + icon.height() * 0.16);
-    speaker.lineTo(icon.left(), icon.center().y() + icon.height() * 0.16);
-    speaker.closeSubpath();
-    painter.drawPath(speaker);
-
-    // Equivalent vector fallback for desktops without the requested theme icons.
-    const QRectF cancelRect(icon.left() + icon.width() * 0.62,
-                            icon.center().y() - icon.width() * 0.19,
-                            icon.width() * 0.38, icon.width() * 0.38);
-    painter.drawEllipse(cancelRect);
-    painter.drawLine(cancelRect.topLeft() + QPointF(cancelRect.width() * 0.15,
-                                                   cancelRect.height() * 0.15),
-                     cancelRect.bottomRight() - QPointF(cancelRect.width() * 0.15,
-                                                       cancelRect.height() * 0.15));
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    const auto drawIcon = [&](const QIcon& symbol, qreal centerOffset, qreal size) {
+        QPixmap pixmap = symbol.pixmap(QSize(64, 64));
+        if(pixmap.isNull()) return;
+        QPainter tint(&pixmap);
+        tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        tint.fillRect(pixmap.rect(), color);
+        tint.end();
+        const QRectF target(cell.center().x() + centerOffset * d - size * d / 2.0,
+                            cell.center().y() - size * d / 2.0,
+                            size * d, size * d);
+        painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()));
+    };
+    drawIcon(volumeLow, -0.14, 0.32);
+    drawIcon(cancel, 0.14, 0.26);
     painter.restore();
 }
 

@@ -30,6 +30,8 @@ qt_add_resources(krgb "branding"
     PREFIX "/branding"
     BASE "assets"
     FILES assets/be-quiet-logo.png
+          assets/mdi-volume-low.svg
+          assets/mdi-cancel.svg
 )
 
 target_link_libraries(krgb PRIVATE
