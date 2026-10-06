@@ -67,12 +67,8 @@ int main(int argc, char** argv) {
     }
 
     if(auto* tabs = window->findChild<QTabWidget*>()) {
-        // MainWindow's original keyboard page is the Alienware page. Keep it
-        // intact for Alienware and do not reuse it for either HID++ or be quiet!.
         QWidget* alienwarePage = tabs->count() > 0 ? tabs->widget(0) : nullptr;
 
-        // The shared page had temporarily gained a Logitech-only Zones entry.
-        // Hide it so Alienware presents its original mode list again.
         if(alienwarePage) {
             for(auto* combo : alienwarePage->findChildren<QComboBox*>()) {
                 const int zones = combo->findText(i18n("Zones (custom)"));
@@ -94,7 +90,6 @@ int main(int argc, char** argv) {
                         QIcon::fromTheme(QStringLiteral("input-keyboard")),
                         i18n("Keyboard"));
 
-        // Diagnose follows whichever protocol-specific keyboard page is visible.
         const int diagnoseInsert = alienwarePage
             ? tabs->indexOf(alienwarePage) + 1
             : 3;
@@ -103,8 +98,40 @@ int main(int argc, char** argv) {
                         QIcon::fromTheme(QStringLiteral("dialog-information")),
                         i18n("Diagnose"));
 
+        // Enforce the Light Mount editor boundary at the page level as well:
+        // paint/select buttons are meaningful only in Per-key (Custom). This
+        // does not depend on translated button text matching inside the widget.
+        QComboBox* lightMountMode = nullptr;
+        for(auto* combo : lightMountPage->findChildren<QComboBox*>()) {
+            if(combo->findText(i18n("Per-key (Custom)")) >= 0) {
+                lightMountMode = combo;
+                break;
+            }
+        }
+        const auto updateLightMountPaintControls = [lightMountPage, lightMountMode]() {
+            const bool perKey = lightMountMode &&
+                lightMountMode->currentText() == i18n("Per-key (Custom)");
+            for(auto* button : lightMountPage->findChildren<QPushButton*>()) {
+                const QString text = button->text();
+                if(text == i18n("Select All") ||
+                   text == i18n("Paint Selected") ||
+                   text == i18n("Off Selected") ||
+                   text == i18n("Fill All")) {
+                    button->setVisible(perKey);
+                }
+            }
+        };
+        if(lightMountMode) {
+            QObject::connect(lightMountMode, &QComboBox::currentIndexChanged,
+                             window, [updateLightMountPaintControls](int) {
+                                 updateLightMountPaintControls();
+                             });
+        }
+        updateLightMountPaintControls();
+
         const auto updateKeyboardPages = [tabs, controller, lightMountPage,
-                                          logitechPage, alienwarePage]() {
+                                          logitechPage, alienwarePage,
+                                          updateLightMountPaintControls]() {
             const bool lightMount = controller->usesBeQuietLightMount();
             const bool logitech = controller->usesLogitechHIDPP20();
             const bool alienware = controller->usesAlienware();
@@ -123,6 +150,7 @@ int main(int argc, char** argv) {
 
             if(lightMount) {
                 lightMountPage->loadCurrentProfile();
+                updateLightMountPaintControls();
                 tabs->setCurrentWidget(lightMountPage);
             } else if(logitech) {
                 logitechPage->refreshFromDevice();
@@ -137,24 +165,26 @@ int main(int argc, char** argv) {
                              updateKeyboardPages();
                          });
         QObject::connect(tabs, &QTabWidget::currentChanged, window,
-                         [tabs, lightMountPage, logitechPage](int index) {
+                         [tabs, lightMountPage, logitechPage,
+                          updateLightMountPaintControls](int index) {
                              if(index < 0) {
                                  return;
                              }
                              if(tabs->widget(index) == lightMountPage) {
                                  lightMountPage->loadCurrentProfile();
+                                 updateLightMountPaintControls();
                              } else if(tabs->widget(index) == logitechPage) {
                                  logitechPage->loadCurrentProfile();
                              }
                          });
 
-        // Keep both native pages synchronized with the shared profile selector.
         for(auto* combo : window->findChildren<QComboBox*>()) {
             if(combo->accessibleName() == i18n("Profile")) {
                 QObject::connect(combo, &QComboBox::currentTextChanged,
                                  lightMountPage,
-                                 [lightMountPage](const QString&) {
+                                 [lightMountPage, updateLightMountPaintControls](const QString&) {
                                      lightMountPage->loadCurrentProfile();
+                                     updateLightMountPaintControls();
                                  });
                 QObject::connect(combo, &QComboBox::currentTextChanged,
                                  logitechPage,
