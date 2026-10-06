@@ -513,8 +513,11 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         if(!logo.isNull()) {
             using namespace krgb::lightmount::ansi_visual;
             const double scale = chassisRect_.width() / kLayoutWidth;
+            // The supplied artwork includes a separate registered-trademark
+            // symbol at x=761..788. The physical keyboard has only the wordmark.
+            const QRectF wordmarkSource(12.0, 10.0, 733.0, 167.0);
             const double logoWidth = 32.0;
-            const double logoHeight = logoWidth * logo.height() / logo.width();
+            const double logoHeight = logoWidth * wordmarkSource.height() / wordmarkSource.width();
             const double centerX = kMainBlockXmm + (kNumpadOffsetU + 2.0) * kKeyUnitMm;
             const double centerY = kFunctionRowYmm + kKeyUnitMm / 2.0;
             const QRectF logoRect(chassisRect_.left() + (centerX - logoWidth / 2.0) * scale,
@@ -523,7 +526,7 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
             painter.save();
             painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
             painter.setOpacity(0.65);
-            painter.drawPixmap(logoRect, logo, QRectF(logo.rect()));
+            painter.drawPixmap(logoRect, logo, wordmarkSource);
             painter.restore();
         }
     }
