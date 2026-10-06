@@ -109,8 +109,10 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
                             size * d, size * d);
         painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()));
     };
-    drawIcon(volumeLow, -0.14, 0.32);
-    drawIcon(cancel, 0.14, 0.26);
+    // Account for the whitespace in the SVGs: the visible marks have a small
+    // gap (3% of the wheel diameter) and are centred together on the wheel.
+    drawIcon(volumeLow, -0.1167, 0.32);
+    drawIcon(cancel, 0.075, 0.26);
     painter.restore();
 }
 
