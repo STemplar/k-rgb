@@ -41,7 +41,7 @@ small, fast, and dependency-light.
 | --- | --- | --- | --- |
 | Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | full GUI/per-key |
 | Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | full GUI/per-key* |
-| be quiet! Light Mount (US ANSI) | `373f:0002` | 2 (vendor HID); 3 (HID LampArray control) | **hardware-verified**: all six native effects, GUI/per-key, static rainbow; [details](#be-quiet-light-mount) |
+| be quiet! Light Mount | `373f:0002` | 2 (vendor HID); 3 (HID LampArray control) | **hardware-verified**: all six native effects, GUI/per-key, static rainbow; [details](#be-quiet-light-mount) |
 | be quiet! Dark Mount | PID not yet recorded | not yet verified | model identity can be read from USB descriptors; lighting support not yet verified |
 | be quiet! Light Mount TKL | PID not yet recorded | not yet verified | model identity can be read from USB descriptors; lighting support not yet verified |
 | Other Logitech HID++ 2.0 RGB keyboards | `046d:<PID>`; a known PID is not required | HID++ endpoint discovered at runtime | capability-based support for implemented lighting features; model-specific geometry may be unavailable |
