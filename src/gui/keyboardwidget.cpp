@@ -340,7 +340,7 @@ double KeyboardWidget::layoutWidth() const {
         return krgb::logitech::g810_iso105_visual::kLayoutWidth;
     }
     if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
-        return krgb::lightmount::ansi_visual::kLayoutWidth;
+        return krgb::lightmount::ansi_visual::kVisualWidth;
     }
     return krgb::kLayoutWidth;
 }
@@ -411,6 +411,7 @@ QStringList KeyboardWidget::selectedKeys() const {
 
 void KeyboardWidget::recomputeLayout() {
     rects_.clear();
+    chassisRect_ = QRectF();
     const double sourceW = layoutWidth();
     const double sourceH = layoutHeight();
     const double availW = width() - 2 * kMargin;
@@ -436,12 +437,19 @@ void KeyboardWidget::recomputeLayout() {
     }
 
     if(layoutKind_ == LayoutKind::BeQuietLightMountAnsi) {
+        const double chassisX = originX + krgb::lightmount::ansi_visual::kSideDisplayMarginMm * unit;
+        chassisRect_ = QRectF(chassisX, originY,
+                             krgb::lightmount::ansi_visual::kLayoutWidth * unit,
+                             krgb::lightmount::ansi_visual::kLayoutHeight * unit);
         const auto& keys = krgb::lightmount::ansi_visual::keys();
         rects_.reserve(static_cast<int>(keys.size()));
         for(const auto& key : keys) {
             const QString name = QString::fromLatin1(key.name);
-            const double inset = name.startsWith(QStringLiteral("TOPBAR_")) ? 0.0 : kKeyInset;
-            const QRectF cell(originX + key.x * unit + inset / 2.0,
+            const bool strip = name.startsWith(QStringLiteral("TOPBAR_")) ||
+                name.startsWith(QStringLiteral("LEFT_STRIP_")) ||
+                name.startsWith(QStringLiteral("RIGHT_STRIP_"));
+            const double inset = strip ? 0.0 : kKeyInset;
+            const QRectF cell(chassisX + key.x * unit + inset / 2.0,
                               originY + key.y * unit + inset / 2.0,
                               qMax(1.0, key.w * unit - inset),
                               qMax(1.0, key.h * unit - inset));
@@ -491,13 +499,20 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
     painter.fillRect(rect(), kBackground);
 
     const bool beQuiet = isBeQuietLayout(layoutKind_);
+    if(!chassisRect_.isEmpty()) {
+        painter.setBrush(QColor(38, 38, 40));
+        painter.setPen(QPen(QColor(125, 125, 130), 1.0));
+        painter.drawRect(chassisRect_);
+    }
 
     for(const KeyRect& r : rects_) {
         const QColor fill = colors_.value(r.name, kUnset);
         const bool sel = selected_.contains(r.name);
         painter.setBrush(fill);
         painter.setPen(QPen(sel ? kSelect : QColor(0, 0, 0, 160), sel ? 2.0 : 1.0));
-        if(beQuiet && r.name.startsWith(QStringLiteral("TOPBAR_"))) {
+        if(beQuiet && (r.name.startsWith(QStringLiteral("TOPBAR_")) ||
+                      r.name.startsWith(QStringLiteral("LEFT_STRIP_")) ||
+                      r.name.startsWith(QStringLiteral("RIGHT_STRIP_")))) {
             painter.setRenderHint(QPainter::Antialiasing, false);
             painter.setPen(Qt::NoPen);
             painter.drawRect(r.cell);

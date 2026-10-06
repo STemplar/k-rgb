@@ -32,6 +32,10 @@ struct VisualKey {
 
 inline constexpr float kLayoutWidth = 461.0f; // mm, left to right
 inline constexpr float kLayoutHeight = 132.0f; // mm, front to back
+inline constexpr float kSideStripWidthMm = 6.0f;
+inline constexpr float kSideStripDisplayGapMm = 3.0f;
+inline constexpr float kSideDisplayMarginMm = kSideStripWidthMm + kSideStripDisplayGapMm;
+inline constexpr float kVisualWidth = kLayoutWidth + 2.0f * kSideDisplayMarginMm;
 inline constexpr float kChassisHeightMm = 44.0f; // vertical; not part of the 2D layout
 inline constexpr float kKeyUnitMm = 19.05f;
 inline constexpr float kMediaWheelDiameterMm = 21.0f;
@@ -205,9 +209,9 @@ inline const std::vector<VisualKey>& keys() {
         add("NUM0",20.20f + xShift,y5,2.0f);
         add("NUMDOT",22.20f + xShift,y5);
 
-        // Side strips: five individually addressable LEDs on each side. The
-        // supplied keyboard layout places the strips alongside rows 2-4,
-        // vertically centred on row 3. Five equal segments span that region.
+        // Side strips: five individually addressable LEDs on each side,
+        // centred alongside the home row. Source coordinates preserve the
+        // segment order; the final display uses rotated topbar-sized segments.
         constexpr float sideTop = y2;
         constexpr float sideHeight = (y4 + 1.0f) - y2;
         constexpr float sideSegmentH = sideHeight / 5.0f;
@@ -283,10 +287,18 @@ inline const std::vector<VisualKey>& keys() {
             key.y *= kLayoutHeight / sourceHeight;
             key.h *= kLayoutHeight / sourceHeight;
             if(name.substr(0, 11) == "LEFT_STRIP_" || name.substr(0, 12) == "RIGHT_STRIP_") {
-                key.y = kFunctionRowYmm + (kTypingRowOffsetU + 1.0f) * kKeyUnitMm +
+                // The strips sit underneath the chassis. Show them outside
+                // its outline so they remain visible and selectable from above.
+                key.x = name.substr(0, 11) == "LEFT_STRIP_" ? -kSideDisplayMarginMm :
+                    kLayoutWidth + kSideStripDisplayGapMm;
+                key.w = kSideStripWidthMm;
+                constexpr float sideDisplaySegmentH = kLayoutWidth / static_cast<float>(kTopBarCount);
+                constexpr float sideDisplayHeight = 5.0f * sideDisplaySegmentH;
+                key.y = kFunctionRowYmm + (kTypingRowOffsetU + 2.5f) * kKeyUnitMm -
+                    sideDisplayHeight / 2.0f +
                     (key.y - sideTop * kLayoutHeight / sourceHeight) /
-                    (sideHeight * kLayoutHeight / sourceHeight) * 3.0f * kKeyUnitMm;
-                key.h = 3.0f * kKeyUnitMm / 5.0f;
+                    (sideHeight * kLayoutHeight / sourceHeight) * sideDisplayHeight;
+                key.h = sideDisplaySegmentH;
             }
         }
         return out;

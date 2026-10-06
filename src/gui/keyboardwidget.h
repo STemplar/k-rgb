@@ -72,6 +72,7 @@ private:
     QHash<QString, QColor> colors_;     // assigned colours only
     QSet<QString>          selected_;
     QVector<KeyRect>       rects_;
+    QRectF                 chassisRect_;
 
     LayoutKind    layoutKind_ = LayoutKind::Alienware;
     quint8        modelBit_   = 0xFF;  // Alienware KeyboardModel::bit
