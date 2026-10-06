@@ -439,11 +439,12 @@ void KeyboardWidget::recomputeLayout() {
         const auto& keys = krgb::lightmount::ansi_visual::keys();
         rects_.reserve(static_cast<int>(keys.size()));
         for(const auto& key : keys) {
-            const QRectF cell(originX + key.x * unit + kKeyInset / 2.0,
-                              originY + key.y * unit + kKeyInset / 2.0,
-                              qMax(1.0, key.w * unit - kKeyInset),
-                              qMax(1.0, key.h * unit - kKeyInset));
             const QString name = QString::fromLatin1(key.name);
+            const double inset = name.startsWith(QStringLiteral("TOPBAR_")) ? 0.0 : kKeyInset;
+            const QRectF cell(originX + key.x * unit + inset / 2.0,
+                              originY + key.y * unit + inset / 2.0,
+                              qMax(1.0, key.w * unit - inset),
+                              qMax(1.0, key.h * unit - inset));
             const QString label = QString::fromUtf8(key.label);
             rects_.push_back({name, label.isEmpty() ? labelFor(name) : label,
                               cell, key.round});
@@ -496,6 +497,18 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         const bool sel = selected_.contains(r.name);
         painter.setBrush(fill);
         painter.setPen(QPen(sel ? kSelect : QColor(0, 0, 0, 160), sel ? 2.0 : 1.0));
+        if(beQuiet && r.name.startsWith(QStringLiteral("TOPBAR_"))) {
+            painter.setRenderHint(QPainter::Antialiasing, false);
+            painter.setPen(Qt::NoPen);
+            painter.drawRect(r.cell);
+            if(sel) {
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(kSelect, 2.0));
+                painter.drawRect(r.cell.adjusted(1.0, 1.0, -1.0, -1.0));
+            }
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            continue;
+        }
         if(r.round) {
             painter.drawEllipse(r.cell);
             const QRectF inner = r.cell.adjusted(r.cell.width() * 0.13,

@@ -1,7 +1,9 @@
 // be quiet! Light Mount US-ANSI visual layout for the GUI per-key editor.
 //
-// Geometry follows the physical keyboard image supplied during hardware
-// validation. Lighting addresses and legends come from the validated vendor
+// Chassis: manufacturer dimensions, 461 x 132 mm without the palmrest.
+// Keys use a standard 19.05 mm unit; block positions follow the supplied ANSI
+// reference and remain estimates. The user supplied a 21 mm media wheel diameter.
+// Lighting addresses and legends come from the validated vendor
 // LED/key map. The top light bar and both side strips are represented as
 // individually selectable RGB elements as well.
 #pragma once
@@ -20,15 +22,18 @@ struct VisualKey {
     std::uint16_t ledId;
     const char* name;
     const char* label;
-    float x;
+    float x; // millimetres in the calibrated top view
     float y;
     float w;
     float h;
     bool round;
 };
 
-inline constexpr float kLayoutWidth = 25.11f;
-inline constexpr float kLayoutHeight = 7.42f;
+inline constexpr float kLayoutWidth = 461.0f; // mm, left to right
+inline constexpr float kLayoutHeight = 132.0f; // mm, front to back
+inline constexpr float kChassisHeightMm = 44.0f; // vertical; not part of the 2D layout
+inline constexpr float kKeyUnitMm = 19.05f;
+inline constexpr float kMediaWheelDiameterMm = 21.0f;
 inline constexpr std::size_t kExpectedPhysicalKeyCount = 110; // 109 keys + 3D Media Wheel
 inline constexpr std::size_t kExpectedAccentCount = 55;      // 45 top + 5 left + 5 right
 inline constexpr std::size_t kExpectedElementCount =
@@ -48,6 +53,8 @@ inline const std::vector<VisualKey>& keys() {
     static const std::vector<VisualKey> data = [] {
         std::vector<VisualKey> out;
         out.reserve(kExpectedElementCount);
+        constexpr float sourceWidth = 25.11f;
+        constexpr float sourceHeight = 7.42f;
 
         auto add = [&out](const char* name, float x, float y,
                           float w = 1.0f, float h = 1.0f,
@@ -64,14 +71,12 @@ inline const std::vector<VisualKey>& keys() {
         constexpr float xShift = 0.28f;
         constexpr float yShift = 0.32f;
 
-        // Top light bar: 45 separately addressable LEDs, left -> right. The
-        // physical white bar in the supplied layout image runs above the key
-        // field, from just right of the media wheel to the right edge of the
-        // numpad.
-        constexpr float topX = 1.55f + xShift;
-        constexpr float topY = 0.02f;
-        constexpr float topW = 22.65f;
-        constexpr float topH = 0.14f;
+        // Top light bar: 45 separately addressable LEDs, left -> right,
+        // spanning the full chassis width in the supplied ANSI reference.
+        constexpr float topX = 0.0f;
+        constexpr float topY = 0.0f;
+        constexpr float topW = sourceWidth;
+        constexpr float topH = 6.0f * sourceHeight / kLayoutHeight;
         constexpr float topSegmentW = topW / static_cast<float>(kTopBarCount);
         for(std::size_t i = 0; i < kTopBarCount; ++i) {
             const std::uint16_t id = static_cast<std::uint16_t>(kTopBarFirst + i);
@@ -100,20 +105,21 @@ inline const std::vector<VisualKey>& keys() {
         add("M4", 0.12f + xShift, 4.82f + yShift);
         add("M5", 0.12f + xShift, 5.92f + yShift);
 
-        // Function row.
+        // Function row: F1 starts two units after Escape. The three groups
+        // have half-unit gaps; F12 ends at the main typing block's right edge.
         add("ESC",   1.55f + xShift, 0.12f + yShift);
-        add("F1",    2.95f + xShift, 0.12f + yShift); add("F2", 3.95f + xShift, 0.12f + yShift);
-        add("F3",    4.95f + xShift, 0.12f + yShift); add("F4", 5.95f + xShift, 0.12f + yShift);
-        add("F5",    7.20f + xShift, 0.12f + yShift); add("F6", 8.20f + xShift, 0.12f + yShift);
-        add("F7",    9.20f + xShift, 0.12f + yShift); add("F8",10.20f + xShift, 0.12f + yShift);
-        add("F9",   11.45f + xShift, 0.12f + yShift); add("F10",12.45f + xShift,0.12f + yShift);
-        add("F11",  13.45f + xShift, 0.12f + yShift); add("F12",14.45f + xShift,0.12f + yShift);
+        add("F1",    3.55f + xShift, 0.12f + yShift); add("F2", 4.55f + xShift, 0.12f + yShift);
+        add("F3",    5.55f + xShift, 0.12f + yShift); add("F4", 6.55f + xShift, 0.12f + yShift);
+        add("F5",    8.05f + xShift, 0.12f + yShift); add("F6", 9.05f + xShift, 0.12f + yShift);
+        add("F7",   10.05f + xShift, 0.12f + yShift); add("F8",11.05f + xShift, 0.12f + yShift);
+        add("F9",   12.55f + xShift, 0.12f + yShift); add("F10",13.55f + xShift,0.12f + yShift);
+        add("F11",  14.55f + xShift, 0.12f + yShift); add("F12",15.55f + xShift,0.12f + yShift);
         add("PRINT", 16.90f + xShift, 0.12f + yShift);
         add("SCRLK", 17.90f + xShift, 0.12f + yShift);
         add("PAUSE", 18.90f + xShift, 0.12f + yShift);
 
-        // Main typing rows. Row pitch is 1.10 key units, matching the product
-        // image; navigation and numpad blocks use the same pitch.
+        // Source row coordinates; converted to the standard 19.05 mm pitch
+        // below. Navigation and numpad blocks use the same pitch.
         constexpr float y1 = 1.52f + yShift;
         constexpr float y2 = 2.62f + yShift;
         constexpr float y3 = 3.72f + yShift;
@@ -200,7 +206,7 @@ inline const std::vector<VisualKey>& keys() {
         constexpr float sideSegmentH = sideHeight / 5.0f;
         constexpr float sideW = 0.14f;
         constexpr float leftX = 0.02f;
-        constexpr float rightX = kLayoutWidth - sideW - 0.02f;
+        constexpr float rightX = sourceWidth - sideW - 0.02f;
 
         for(std::size_t i = 0; i < 5; ++i) {
             char leftName[20];
@@ -232,6 +238,39 @@ inline const std::vector<VisualKey>& keys() {
             }
         }
 
+        // Keep drawing and flag presets in one physical coordinate system.
+        // Fit standard key units within the chassis, preserving ANSI widths.
+        // Block origins and the function-row gap are image-derived estimates.
+        for(auto& key : out) {
+            const std::string_view name(key.name);
+            if(key.round) {
+                key.x = 14.5f - kMediaWheelDiameterMm / 2.0f;
+                key.y = 20.5f - kMediaWheelDiameterMm / 2.0f;
+                key.w = key.h = kMediaWheelDiameterMm;
+                continue;
+            }
+            if(name.substr(0, 7) != "TOPBAR_" && name.substr(0, 11) != "LEFT_STRIP_" &&
+               name.substr(0, 12) != "RIGHT_STRIP_") {
+                if(key.x < 1.55f + xShift) {
+                    key.x = 4.0f;
+                } else if(key.x >= 20.20f + xShift) {
+                    key.x = 382.0f + (key.x - (20.20f + xShift)) * kKeyUnitMm;
+                } else if(key.x >= 16.90f + xShift) {
+                    key.x = 320.5f + (key.x - (16.90f + xShift)) * kKeyUnitMm;
+                } else {
+                    key.x = 29.0f + (key.x - (1.55f + xShift)) * kKeyUnitMm;
+                }
+                key.y = key.y < y1 ? 10.0f :
+                    32.0f + (key.y - y1) / 1.10f * kKeyUnitMm;
+                key.w *= kKeyUnitMm;
+                key.h = (key.h > 1.0f ? 2.0f : 1.0f) * kKeyUnitMm;
+                continue;
+            }
+            key.x *= kLayoutWidth / sourceWidth;
+            key.w *= kLayoutWidth / sourceWidth;
+            key.y *= kLayoutHeight / sourceHeight;
+            key.h *= kLayoutHeight / sourceHeight;
+        }
         return out;
     }();
     return data;
