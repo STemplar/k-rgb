@@ -585,12 +585,12 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
             const QFont font = beQuietLegendFont(painter.font(), r.cell, r.label);
             painter.setFont(font);
             if(r.name == QStringLiteral("NUMPLUS") || r.name == QStringLiteral("NUMENTER")) {
-                // The two tall keycaps have their legends close to the top,
-                // as in the official product image. Align actual glyph ink;
-                // AlignTop otherwise includes the font's ascender whitespace.
+                // Close-up hardware photos place the legends in the centre
+                // of the upper half of these two-row keycaps. Align visible
+                // ink rather than the font's line box.
                 const QRectF ink = QFontMetricsF(font).tightBoundingRect(r.label);
                 painter.drawText(QPointF(r.cell.center().x() - ink.center().x(),
-                                         r.cell.top() + keySize * 0.10 - ink.top()),
+                                         r.cell.top() + r.cell.height() * 0.25 - ink.center().y()),
                                  r.label);
                 continue;
             }
