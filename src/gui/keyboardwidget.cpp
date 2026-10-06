@@ -10,6 +10,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
+#include <QPixmap>
 
 namespace {
 constexpr double kMargin   = 6.0;
@@ -503,6 +504,25 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
         painter.setBrush(QColor(38, 38, 40));
         painter.setPen(QPen(QColor(125, 125, 130), 1.0));
         painter.drawRect(chassisRect_);
+        // Brand mark above the numpad, as on the Light Mount reference image.
+        // It is decoration, so it has no selectable LED address.
+        static const QPixmap logo(QStringLiteral(":/branding/be-quiet-logo.png"));
+        if(!logo.isNull()) {
+            using namespace krgb::lightmount::ansi_visual;
+            const double scale = chassisRect_.width() / kLayoutWidth;
+            const double logoWidth = 32.0;
+            const double logoHeight = logoWidth * logo.height() / logo.width();
+            const double centerX = kMainBlockXmm + (kNumpadOffsetU + 2.0) * kKeyUnitMm;
+            const double centerY = kFunctionRowYmm + kKeyUnitMm / 2.0;
+            const QRectF logoRect(chassisRect_.left() + (centerX - logoWidth / 2.0) * scale,
+                                  chassisRect_.top() + (centerY - logoHeight / 2.0) * scale,
+                                  logoWidth * scale, logoHeight * scale);
+            painter.save();
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.setOpacity(0.65);
+            painter.drawPixmap(logoRect, logo, QRectF(logo.rect()));
+            painter.restore();
+        }
     }
 
     for(const KeyRect& r : rects_) {

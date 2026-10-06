@@ -26,6 +26,12 @@ add_executable(krgb
     settings.cpp
 )
 
+qt_add_resources(krgb "branding"
+    PREFIX "/branding"
+    BASE "assets"
+    FILES assets/be-quiet-logo.png
+)
+
 target_link_libraries(krgb PRIVATE
     krgb-core
     Qt6::Widgets
