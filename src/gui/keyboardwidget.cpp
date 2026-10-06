@@ -6,6 +6,7 @@
 
 #include <QFont>
 #include <QFontMetricsF>
+#include <QIcon>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -98,6 +99,26 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
                       cell.center().y() - d * 0.22,
                       d * 0.50, d * 0.44);
 
+    static const QIcon volumeLow = QIcon::fromTheme(QStringLiteral("audio-volume-low"));
+    static const QIcon cancel = QIcon::fromTheme(QStringLiteral("dialog-cancel"));
+    if(!volumeLow.isNull() && !cancel.isNull()) {
+        const auto drawIcon = [&](const QIcon& symbol, const QRectF& target) {
+            QPixmap pixmap = symbol.pixmap(QSize(64, 64));
+            QPainter tint(&pixmap);
+            tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            tint.fillRect(pixmap.rect(), color);
+            tint.end();
+            painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()));
+        };
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        drawIcon(volumeLow, QRectF(cell.center().x() - d * 0.34,
+                                  cell.center().y() - d * 0.24, d * 0.48, d * 0.48));
+        drawIcon(cancel, QRectF(cell.center().x() + d * 0.08,
+                               cell.center().y() - d * 0.18, d * 0.36, d * 0.36));
+        painter.restore();
+        return;
+    }
+
     QPen pen(color, qMax<qreal>(1.2, d * 0.035));
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
@@ -116,14 +137,15 @@ void drawBeQuietMuteMark(QPainter& painter, const QRectF& cell,
     speaker.closeSubpath();
     painter.drawPath(speaker);
 
-    painter.drawLine(QPointF(icon.left() + icon.width() * 0.62,
-                             icon.top() + icon.height() * 0.24),
-                     QPointF(icon.right(),
-                             icon.bottom() - icon.height() * 0.24));
-    painter.drawLine(QPointF(icon.right(),
-                             icon.top() + icon.height() * 0.24),
-                     QPointF(icon.left() + icon.width() * 0.62,
-                             icon.bottom() - icon.height() * 0.24));
+    // Equivalent vector fallback for desktops without the requested theme icons.
+    const QRectF cancelRect(icon.left() + icon.width() * 0.62,
+                            icon.center().y() - icon.width() * 0.19,
+                            icon.width() * 0.38, icon.width() * 0.38);
+    painter.drawEllipse(cancelRect);
+    painter.drawLine(cancelRect.topLeft() + QPointF(cancelRect.width() * 0.15,
+                                                   cancelRect.height() * 0.15),
+                     cancelRect.bottomRight() - QPointF(cancelRect.width() * 0.15,
+                                                       cancelRect.height() * 0.15));
     painter.restore();
 }
 
