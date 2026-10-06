@@ -162,6 +162,13 @@ identifying a model does not by itself establish its lighting protocol or layout
 Current be quiet! discovery selects `373f:0002` and uses the Light Mount name;
 generic product-name discovery for the other models is not implemented yet.
 
+The Light Mount TKL is the tenkeyless variant of the full-size Light Mount.
+According to the user's hardware description, it retains the base layout but
+omits the numpad block, and its top light bar is shortened at the right-hand
+end. A TKL visual layout should reflect those differences. Its topbar LED count,
+LED addresses, and lighting protocol have not yet been verified; removing the
+numpad from the drawing alone does not establish a compatible write map.
+
 The Light Mount has its own GUI page and lighting backend. Static, Color Wave,
 Tornado, Breathing, Reactive, and Matrix have all been confirmed working on
 physical Light Mount hardware through user testing. Per-key Custom and the
