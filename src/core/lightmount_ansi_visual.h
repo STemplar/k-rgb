@@ -39,13 +39,16 @@ inline constexpr float kSideDisplayMarginMm = kSideStripWidthMm + kSideStripDisp
 inline constexpr float kVisualWidth = kLayoutWidth + 2.0f * kSideDisplayMarginMm;
 inline constexpr float kChassisHeightMm = 44.0f; // vertical; not part of the 2D layout
 inline constexpr float kKeyUnitMm = 19.05f;
+inline constexpr float kKeycapGapMm = 1.05f; // 18 mm cap on the 19.05 mm grid
 inline constexpr float kMediaWheelDiameterMm = 21.0f;
-inline constexpr float kMacroColumnXmm = 4.0f;
-inline constexpr float kMainBlockXmm = 29.0f;
 inline constexpr float kFunctionRowYmm = 7.0f;
 inline constexpr float kNavigationOffsetU = 15.25f;
 inline constexpr float kNumpadOffsetU = 18.5f;
-inline constexpr float kTypingRowOffsetU = 1.5f;
+inline constexpr float kChassisSideKeyMarginMm = 6.0f;
+inline constexpr float kMacroColumnXmm = kChassisSideKeyMarginMm;
+inline constexpr float kMainBlockXmm = kLayoutWidth - kChassisSideKeyMarginMm -
+    (kNumpadOffsetU + 4.0f) * kKeyUnitMm;
+inline constexpr float kTypingRowOffsetU = 1.25f;
 inline constexpr std::size_t kExpectedPhysicalKeyCount = 110; // 109 keys + 3D Media Wheel
 inline constexpr std::size_t kExpectedAccentCount = 55;      // 45 top + 5 left + 5 right
 inline constexpr std::size_t kExpectedElementCount =
@@ -253,7 +256,8 @@ inline const std::vector<VisualKey>& keys() {
         // Keep drawing and flag presets in one physical coordinate system.
         // Fit standard key units within the chassis, preserving ANSI widths.
         // Conventional full-size layout: a quarter-unit gap on either side
-        // of the navigation block and a half-unit gap below the function row.
+        // of the navigation block. A quarter-unit gap below the function row
+        // leaves room for the bottom chassis border without changing key pitch.
         for(auto& key : out) {
             const std::string_view name(key.name);
             if(key.round) {

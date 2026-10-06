@@ -449,7 +449,10 @@ void KeyboardWidget::recomputeLayout() {
             const bool strip = name.startsWith(QStringLiteral("TOPBAR_")) ||
                 name.startsWith(QStringLiteral("LEFT_STRIP_")) ||
                 name.startsWith(QStringLiteral("RIGHT_STRIP_"));
-            const double inset = strip ? 0.0 : kKeyInset;
+            // Keycap clearance follows the physical grid rather than a fixed
+            // pixel gap. The wheel and light strips use their full dimensions.
+            const double inset = (strip || key.round) ? 0.0 :
+                krgb::lightmount::ansi_visual::kKeycapGapMm * unit;
             const QRectF cell(chassisX + key.x * unit + inset / 2.0,
                               originY + key.y * unit + inset / 2.0,
                               qMax(1.0, key.w * unit - inset),
