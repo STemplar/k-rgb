@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QHash>
 
 class KeyboardController;
 class KeyboardWidget;
@@ -20,6 +21,7 @@ public Q_SLOTS:
     void loadCurrentProfile();
 
 private Q_SLOTS:
+    void onModeChanged();
     void updateControls();
     void applyAndSave();
     void paintSelection();
@@ -44,4 +46,6 @@ private:
     KeyboardWidget* keyboard_ = nullptr;
     QLabel* selectionLabel_ = nullptr;
     bool loading_ = false;
+    QHash<int, int> effectDirections_;
+    int activeEffectCode_ = 0;
 };

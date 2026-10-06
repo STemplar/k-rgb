@@ -27,6 +27,8 @@ struct LightingSettings {
     int    effectColorMode = 0;
     int    speed      = static_cast<int>(krgb::Speed::Normal);
     int    direction  = static_cast<int>(krgb::Direction::Left);
+    // Remember directions independently, keyed by protocol-scoped effect code.
+    QHash<int, int> effectDirections;
     // Exact firmware effect period for devices such as the G810. Zero keeps
     // compatibility with older profiles and derives the period from speed.
     int    effectPeriodMs = 0;

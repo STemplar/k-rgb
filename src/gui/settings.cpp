@@ -64,6 +64,11 @@ void writeInto(KConfigGroup& g, const LightingSettings& s) {
     g.writeEntry("effectColorMode", s.effectColorMode);
     g.writeEntry("speed", s.speed);
     g.writeEntry("direction", s.direction);
+    QStringList directions;
+    for(auto it = s.effectDirections.cbegin(); it != s.effectDirections.cend(); ++it) {
+        directions << QString::number(it.key()) + QLatin1Char('=') + QString::number(it.value());
+    }
+    g.writeEntry("effectDirections", directions);
     g.writeEntry("effectPeriodMs", s.effectPeriodMs);
     g.writeEntry("brightness", s.brightness);
     g.writeEntry("keyColors", encodeKeyColors(s.keyColors));
@@ -84,6 +89,14 @@ LightingSettings readFrom(const KConfigGroup& g) {
     s.effectColorMode = g.readEntry("effectColorMode", s.effectColorMode);
     s.speed = g.readEntry("speed", s.speed);
     s.direction = g.readEntry("direction", s.direction);
+    for(const auto& entry : g.readEntry("effectDirections", QStringList())) {
+        const int separator = entry.indexOf(QLatin1Char('='));
+        if(separator <= 0) continue;
+        bool codeOk = false, directionOk = false;
+        const int code = entry.left(separator).toInt(&codeOk);
+        const int direction = entry.mid(separator + 1).toInt(&directionOk);
+        if(codeOk && directionOk) s.effectDirections.insert(code, direction);
+    }
     s.effectPeriodMs = g.readEntry("effectPeriodMs", s.effectPeriodMs);
     s.brightness = g.readEntry("brightness", s.brightness);
     s.keyColors = decodeKeyColors(g.readEntry("keyColors", QStringList()));

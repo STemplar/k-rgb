@@ -42,6 +42,20 @@ krgb::LightMountEffect nativeEffect(int code) {
     return static_cast<krgb::LightMountEffect>(krgb::nativeEffectValue(code));
 }
 
+bool hasDirection(int code) {
+    return isLightMountEffectCode(code) &&
+        (nativeEffect(code) == krgb::LightMountEffect::ColorWave ||
+         nativeEffect(code) == krgb::LightMountEffect::Matrix ||
+         nativeEffect(code) == krgb::LightMountEffect::Tornado);
+}
+
+int validDirection(int code, int direction) {
+    if(isLightMountEffectCode(code) && nativeEffect(code) == krgb::LightMountEffect::Tornado) {
+        return direction == 4 || direction == 5 ? direction : 4;
+    }
+    return direction >= 0 && direction <= 3 ? direction : 3;
+}
+
 } // namespace
 
 LightMountKeyboardWidget::LightMountKeyboardWidget(
@@ -168,7 +182,7 @@ LightMountKeyboardWidget::LightMountKeyboardWidget(
     root->addLayout(actionRow);
 
     connect(modeCombo_, &QComboBox::currentIndexChanged,
-            this, &LightMountKeyboardWidget::updateControls);
+            this, &LightMountKeyboardWidget::onModeChanged);
     connect(colorModeCombo_, &QComboBox::currentIndexChanged,
             this, &LightMountKeyboardWidget::updateControls);
     connect(speedSlider_, &QSlider::valueChanged, this, [this](int value) {
@@ -212,6 +226,20 @@ LightMountKeyboardWidget::LightMountKeyboardWidget(
 
 bool LightMountKeyboardWidget::isPerKeyMode() const {
     return modeCombo_->currentData().toInt() == kPerKeyMode;
+}
+
+void LightMountKeyboardWidget::onModeChanged() {
+    if(loading_) return;
+    if(hasDirection(activeEffectCode_)) {
+        effectDirections_.insert(activeEffectCode_, directionCombo_->currentData().toInt());
+    }
+    activeEffectCode_ = selectedEffectCode();
+    if(hasDirection(activeEffectCode_)) {
+        const int direction = validDirection(activeEffectCode_,
+            effectDirections_.value(activeEffectCode_, -1));
+        directionCombo_->setCurrentIndex(directionCombo_->findData(direction));
+    }
+    updateControls();
 }
 
 bool LightMountKeyboardWidget::isRainbowMode() const {
@@ -309,6 +337,13 @@ void LightMountKeyboardWidget::paintSelection() {
 void LightMountKeyboardWidget::loadCurrentProfile() {
     loading_ = true;
     const LightingSettings s = LightingSettings::load(Profiles::current());
+    effectDirections_ = s.effectDirections;
+    // Older profiles only stored the direction of the active effect. Migrate
+    // that value for that effect alone; other modes keep their own defaults.
+    if(s.kind == LightingSettings::Effect && hasDirection(s.effectMode) &&
+       !effectDirections_.contains(s.effectMode)) {
+        effectDirections_.insert(s.effectMode, validDirection(s.effectMode, s.direction));
+    }
 
     int modeIndex = 0;
     if(s.kind == LightingSettings::PerKey) {
@@ -345,11 +380,9 @@ void LightMountKeyboardWidget::loadCurrentProfile() {
     }
     speedSlider_->setValue(percentToSliderStep(speed));
 
-    int direction = s.direction;
-    if(direction < static_cast<int>(krgb::LightMountDirection::Up) ||
-       direction > static_cast<int>(krgb::LightMountDirection::CounterClockwise)) {
-        direction = static_cast<int>(krgb::LightMountDirection::Right);
-    }
+    activeEffectCode_ = selectedEffectCode();
+    const int direction = validDirection(activeEffectCode_,
+        effectDirections_.value(activeEffectCode_, -1));
     const int directionIndex = directionCombo_->findData(direction);
     if(directionIndex >= 0) {
         directionCombo_->setCurrentIndex(directionIndex);
@@ -382,8 +415,12 @@ void LightMountKeyboardWidget::applyAndSave() {
         s.effectColorMode = colorModeCombo_->currentData().toInt();
         s.speed = speedSlider_->value() * 10;
         s.direction = directionCombo_->currentData().toInt();
+        if(hasDirection(s.effectMode)) {
+            effectDirections_.insert(s.effectMode, s.direction);
+        }
         s.effectPeriodMs = 0;
     }
+    s.effectDirections = effectDirections_;
 
     if(s.apply(*controller_)) {
         s.save(Profiles::current());
