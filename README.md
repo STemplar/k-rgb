@@ -2,7 +2,7 @@
 
 A native **KDE / Qt 6** application (plus a CLI and a Python reference tool) for
 controlling keyboard lighting on Linux, including **Alienware AW410K**,
-**be quiet! Light Mount**, and selected **Logitech** keyboards — no vendor
+**be quiet! Light Mount**, and **Logitech HID++ RGB** keyboards — no vendor
 software, no root daemon, no cloud. Support varies by device; see the table below.
 
 It talks directly to the keyboard's vendor HID interface over `hidraw`, so it's
@@ -42,6 +42,9 @@ small, fast, and dependency-light.
 | Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | full GUI/per-key |
 | Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | full GUI/per-key* |
 | be quiet! Light Mount (US ANSI) | `373f:0002` | 2 (vendor HID); 3 (HID LampArray control) | **hardware-verified**: all six native effects, GUI/per-key, static rainbow; [details](#be-quiet-light-mount) |
+| be quiet! Dark Mount | PID not yet recorded | not yet verified | model identity can be read from USB descriptors; lighting support not yet verified |
+| be quiet! Light Mount TKL | PID not yet recorded | not yet verified | model identity can be read from USB descriptors; lighting support not yet verified |
+| Other Logitech HID++ 2.0 RGB keyboards | `046d:<PID>`; a known PID is not required | HID++ endpoint discovered at runtime | capability-based support for implemented lighting features; model-specific geometry may be unavailable |
 | Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | **capture-derived**: 5-zone RGB / `0x8070`; hardware-unverified |
 | Logitech G410 Atlas Spectrum | `046d:c330` | HID++ endpoint discovered at runtime | **resource-derived** per-key metadata; hardware-unverified |
 | Logitech G413 Carbon | `046d:c33a` | HID++ endpoint discovered at runtime | **capture-derived** brightness/breathing behavior; write path not implemented |
@@ -99,9 +102,13 @@ and explicitly marked rather than discarded.
 
 Known PIDs are used only for USB identity, udev permissions, optional geometry
 metadata, and properties or quirks that HID++ does not report. Unknown Logitech
-HID++ 2.0 lighting keyboards can therefore be identified and inspected without
+HID++ 2.0 lighting keyboards can therefore be identified and controlled without
 adding their PID to protocol code first, provided the corresponding hidraw
-endpoint is accessible. `krgb-cli logitech info` prints the full enumerated
+endpoint is accessible and the device exposes lighting features implemented by
+k-rgb. The hardware table lists model-specific evidence, not a PID whitelist.
+Unsupported feature formats still need implementation, and an unknown model
+does not automatically have a matching visual per-key layout.
+`krgb-cli logitech info` prints the full enumerated
 feature table so captures and hardware reports can be compared without confusing
 feature IDs with runtime indexes.
 
@@ -146,6 +153,14 @@ Those captures raise their protocol evidence status, but do not by themselves
 make the corresponding k-rgb write paths hardware-verified or implemented.
 
 ### be quiet! Light Mount
+
+The be quiet! keyboard range includes Dark Mount, Light Mount, and Light Mount
+TKL. Only the full-size Light Mount currently has a verified lighting backend
+in k-rgb. The Dark Mount and Light Mount TKL PIDs have not yet been recorded in
+this project. Their model names can be obtained from USB product descriptors;
+identifying a model does not by itself establish its lighting protocol or layout.
+Current be quiet! discovery selects `373f:0002` and uses the Light Mount name;
+generic product-name discovery for the other models is not implemented yet.
 
 The Light Mount has its own GUI page and lighting backend. Static, Color Wave,
 Tornado, Breathing, Reactive, and Matrix have all been confirmed working on
