@@ -23,6 +23,9 @@ class KeyboardController;
 class KeyboardWidget;
 class CaseController;
 class ZoneGridWidget;
+class QStackedWidget;
+class LightMountKeyboardWidget;
+class LogitechKeyboardWidget;
 
 class MainWindow : public KMainWindow {
     Q_OBJECT
@@ -126,6 +129,10 @@ private:
     QVector<KColorButton*>  keyboardZoneButtons_;
 
     QTabWidget*     tabs_               = nullptr;
+    QStackedWidget* keyboardPages_      = nullptr;
+    QWidget*        alienwarePage_      = nullptr;
+    LightMountKeyboardWidget* lightMountPage_ = nullptr;
+    LogitechKeyboardWidget* logitechPage_ = nullptr;
     QWidget*        casePage_           = nullptr;
     KColorButton*   caseColorButton_    = nullptr;
     QPushButton*    caseApplyButton_    = nullptr;

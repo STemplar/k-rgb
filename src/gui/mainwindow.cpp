@@ -1,8 +1,11 @@
 #include "mainwindow.h"
 
 #include "casecontroller.h"
+#include "diagnosewidget.h"
 #include "keyboardcontroller.h"
 #include "keyboardwidget.h"
+#include "lightmountkeyboardwidget.h"
+#include "logitechkeyboardwidget.h"
 #include "zonegridwidget.h"
 #include "core/aw410k_device.h"
 #include "core/keymap.h"
@@ -30,6 +33,7 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QSystemTrayIcon>
@@ -274,7 +278,16 @@ void MainWindow::buildUi() {
     outer->addLayout(profileRow);
 
     tabs_ = new QTabWidget(central);
-    tabs_->addTab(buildKeyboardPage(), QIcon::fromTheme(QStringLiteral("input-keyboard")), i18n("Keyboard"));
+    keyboardPages_ = new QStackedWidget(central);
+    alienwarePage_ = buildKeyboardPage();
+    lightMountPage_ = new LightMountKeyboardWidget(controller_, keyboardPages_);
+    logitechPage_ = new LogitechKeyboardWidget(controller_, keyboardPages_);
+    keyboardPages_->addWidget(alienwarePage_);
+    keyboardPages_->addWidget(lightMountPage_);
+    keyboardPages_->addWidget(logitechPage_);
+    tabs_->addTab(keyboardPages_, QIcon::fromTheme(QStringLiteral("input-keyboard")), i18n("Keyboard"));
+    tabs_->addTab(new DiagnoseWidget(controller_, tabs_),
+                  QIcon::fromTheme(QStringLiteral("dialog-information")), i18n("Diagnose"));
     casePage_ = buildCasePage();
     outer->addWidget(tabs_, 1);
 
@@ -758,6 +771,8 @@ void MainWindow::switchToProfile(const QString& name, bool apply) {
     Profiles::setCurrent(name);
     loading_ = true;
     loadProfileIntoUi(LightingSettings::load(name));
+    lightMountPage_->loadCurrentProfile();
+    logitechPage_->loadCurrentProfile();
     loading_ = false;
     if(apply && controller_->isConnected()) {
         LightingSettings::load(name).apply(*controller_);
@@ -866,33 +881,37 @@ void MainWindow::loadProfileIntoUi(const LightingSettings& s) {
 }
 
 LightingSettings MainWindow::currentSettings() const {
-    LightingSettings s;
-    const ModeEntry& m = modes_.at(modeCombo_->currentIndex());
-    if(m.solid) {
-        s.kind = LightingSettings::Solid;
-    } else if(m.rainbow) {
-        s.kind = LightingSettings::Rainbow;
-    } else if(m.perkey) {
-        s.kind = LightingSettings::PerKey;
-        s.keyColors = keyboardWidget_->keyColors();
-    } else if(m.zones) {
-        s.kind = LightingSettings::Zones;
-        for(int i = 0; i < keyboardZoneButtons_.size(); ++i) {
-            s.keyboardZoneColors.insert(i, keyboardZoneButtons_.at(i)->color());
+    LightingSettings s = LightingSettings::load(Profiles::current());
+    // Dedicated protocol pages save their own settings on Apply. The hidden
+    // Alienware controls must not overwrite those settings when copying a profile.
+    if(controller_->usesAlienware()) {
+        const ModeEntry& m = modes_.at(modeCombo_->currentIndex());
+        if(m.solid) {
+            s.kind = LightingSettings::Solid;
+        } else if(m.rainbow) {
+            s.kind = LightingSettings::Rainbow;
+        } else if(m.perkey) {
+            s.kind = LightingSettings::PerKey;
+            s.keyColors = keyboardWidget_->keyColors();
+        } else if(m.zones) {
+            s.kind = LightingSettings::Zones;
+            for(int i = 0; i < keyboardZoneButtons_.size(); ++i) {
+                s.keyboardZoneColors.insert(i, keyboardZoneButtons_.at(i)->color());
+            }
+        } else {
+            s.kind = LightingSettings::Effect;
+            s.effectMode = m.value;
         }
-    } else {
-        s.kind = LightingSettings::Effect;
-        s.effectMode = m.value;
+        s.color = colorButton_->color();
+        s.speed = speedCombo_->currentData().toInt();
+        s.effectPeriodMs =
+            (controller_->usesLogitechG810Iso105VisualLayout() &&
+             s.kind == LightingSettings::Effect && effectPeriodSpin_)
+                ? effectPeriodSpin_->value()
+                : 0;
+        s.direction = directionCombo_->currentData().toInt();
+        s.brightness = brightnessSlider_->value();
     }
-    s.color = colorButton_->color();
-    s.speed = speedCombo_->currentData().toInt();
-    s.effectPeriodMs =
-        (controller_->usesLogitechG810Iso105VisualLayout() &&
-         s.kind == LightingSettings::Effect && effectPeriodSpin_)
-            ? effectPeriodSpin_->value()
-            : 0;
-    s.direction = directionCombo_->currentData().toInt();
-    s.brightness = brightnessSlider_->value();
     s.caseSet = caseController_ && caseController_->isAvailable();
     s.casePerZone = casePerZone_;
     s.caseColor = caseColorButton_->color();
@@ -1196,6 +1215,17 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
     const bool g810Iso105 =
         connected && controller_->usesLogitechG810Iso105VisualLayout();
     const bool lightMount = connected && controller_->usesBeQuietLightMount();
+    const bool logitech = connected && controller_->usesLogitechHIDPP20();
+    if(lightMount) {
+        lightMountPage_->loadCurrentProfile();
+        keyboardPages_->setCurrentWidget(lightMountPage_);
+    } else if(logitech) {
+        logitechPage_->refreshFromDevice();
+        keyboardPages_->setCurrentWidget(logitechPage_);
+    } else {
+        keyboardPages_->setCurrentWidget(alienwarePage_);
+    }
+    keyboardPages_->setEnabled(connected);
 
     if(brightnessSlider_) {
         brightnessSlider_->setRange(lightMount ? 10 : 0, 100);
@@ -1228,10 +1258,10 @@ void MainWindow::onConnectionChanged(bool connected, const QString& path) {
             modeCombo_->setItemText(i, modes_.at(i).name);
         }
 
-        const bool hideForG810 =
-            g810Iso105 && (mode == Mode::SingleWave);
+        const bool hideLegacyMode =
+            (g810Iso105 && mode == Mode::SingleWave) || modes_.at(i).zones;
         if(auto* listView = qobject_cast<QListView*>(modeCombo_->view())) {
-            listView->setRowHidden(i, hideForG810);
+            listView->setRowHidden(i, hideLegacyMode);
         }
     }
 

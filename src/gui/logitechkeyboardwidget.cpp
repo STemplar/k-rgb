@@ -1,6 +1,7 @@
 #include "logitechkeyboardwidget.h"
 
 #include "keyboardcontroller.h"
+#include "keyboardwidget.h"
 #include "settings.h"
 #include "core/effect_code.h"
 
@@ -64,6 +65,36 @@ LogitechKeyboardWidget::LogitechKeyboardWidget(KeyboardController* controller, Q
     detailLabel_->setWordWrap(true);
     detailLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     v->addWidget(detailLabel_);
+    perKeyPanel_ = new QWidget(this);
+    auto* perKeyLayout = new QVBoxLayout(perKeyPanel_);
+    keyboardWidget_ = new KeyboardWidget(perKeyPanel_);
+    keyboardWidget_->setLayoutKind(KeyboardWidget::LayoutKind::LogitechG810Iso105);
+    perKeyLayout->addWidget(keyboardWidget_);
+    auto* selectionRow = new QHBoxLayout();
+    selectionLabel_ = new QLabel(i18n("No keys selected"), perKeyPanel_);
+    auto* selectAll = new QPushButton(i18n("Select All"), perKeyPanel_);
+    auto* paint = new QPushButton(i18n("Paint Selected"), perKeyPanel_);
+    auto* offSelected = new QPushButton(i18n("Off Selected"), perKeyPanel_);
+    auto* fillAll = new QPushButton(i18n("Fill All"), perKeyPanel_);
+    selectionRow->addWidget(selectionLabel_);
+    selectionRow->addWidget(selectAll);
+    selectionRow->addWidget(paint);
+    selectionRow->addWidget(offSelected);
+    selectionRow->addWidget(fillAll);
+    perKeyLayout->addLayout(selectionRow);
+    v->addWidget(perKeyPanel_);
+    connect(selectAll, &QPushButton::clicked, keyboardWidget_, &KeyboardWidget::selectAll);
+    connect(paint, &QPushButton::clicked, this, [this] {
+        keyboardWidget_->paintSelection(colorButton_->color());
+    });
+    connect(offSelected, &QPushButton::clicked, keyboardWidget_, &KeyboardWidget::clearSelection);
+    connect(fillAll, &QPushButton::clicked, this, [this] {
+        keyboardWidget_->fillAll(colorButton_->color());
+    });
+    connect(keyboardWidget_, &KeyboardWidget::selectionChanged, this, [this](int count) {
+        selectionLabel_->setText(count == 0 ? i18n("No keys selected")
+            : i18np("%1 key selected", "%1 keys selected", count));
+    });
     v->addStretch();
 
     auto* buttons = new QHBoxLayout();
@@ -188,15 +219,18 @@ void LogitechKeyboardWidget::updateControls() {
     const bool effect = value >= 0;
     const bool implemented = !effect || effectIsImplemented(static_cast<std::uint16_t>(value));
 
-    const bool color = value == -1 || value == 1 || value == 5 || value == 10;
+    const bool hasMode = modeCombo_->currentIndex() >= 0;
+    const bool perKey = hasMode && value == -2 && controller_->supportsPerKeyColors();
+    perKeyPanel_->setVisible(perKey);
+    const bool color = value == -1 || perKey || value == 1 || value == 5 || value == 10;
     const bool period = value == 3 || value == 4 || value == 10;
     const bool direction = value == 4;
 
     colorButton_->setEnabled(color);
     periodSpin_->setEnabled(period && implemented);
     directionCombo_->setEnabled(direction && implemented);
-    intensitySlider_->setEnabled(effect && value != 1 && implemented);
-    applyButton_->setEnabled(controller_->isConnected() && implemented);
+    intensitySlider_->setEnabled(hasMode && implemented);
+    applyButton_->setEnabled(controller_->isConnected() && hasMode && implemented);
 
     if(effectSource_ == EffectSource::RgbEffects8071 && effect) {
         detailLabel_->setText(i18n("This effect is reported by HID++ 0x8071 RGB Effects. It is intentionally read-only until the 0x8071 software-control and setRgbClusterEffect path is implemented."));
@@ -237,7 +271,7 @@ void LogitechKeyboardWidget::applyAndSave() {
         s.brightness = intensitySlider_->value();
         ok = controller_->applyRainbow(s.brightness);
     } else if(value == -2) {
-        detailLabel_->setText(i18n("Use the per-key editor on a supported Logitech layout."));
+        applyPerKeyAndSave();
         return;
     } else {
         const auto id = static_cast<std::uint16_t>(value);
@@ -262,11 +296,23 @@ void LogitechKeyboardWidget::applyAndSave() {
     if(ok) s.save(Profiles::current());
 }
 
+void LogitechKeyboardWidget::applyPerKeyAndSave() {
+    if(!controller_->supportsPerKeyColors()) return;
+    LightingSettings s = LightingSettings::load(Profiles::current());
+    s.kind = LightingSettings::PerKey;
+    s.keyColors = keyboardWidget_->keyColors();
+    s.brightness = intensitySlider_->value();
+    if(controller_->applyPerKey(s.keyColors, s.brightness)) {
+        s.save(Profiles::current());
+    }
+}
+
 void LogitechKeyboardWidget::loadCurrentProfile() {
     if(!controller_->usesLogitechHIDPP20() || modeCombo_->count() == 0) return;
 
     const LightingSettings s = LightingSettings::load(Profiles::current());
     loading_ = true;
+    keyboardWidget_->setKeyColors(s.keyColors);
 
     int wanted = -1;
     if(s.kind == LightingSettings::Rainbow) {
