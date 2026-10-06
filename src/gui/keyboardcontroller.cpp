@@ -613,12 +613,7 @@ bool KeyboardController::applyEffect(int modeValue, int speedValue, int directio
                 return false;
         }
 
-        if(!lightMountDevice_.setLightingMode(krgb::LightMountLightingMode::General) ||
-           !lightMountDevice_.setGeneralEffect(effect)) {
-            Q_EMIT error(i18n("Failed to set Light Mount firmware effect."));
-            return false;
-        }
-        return true;
+        return applyLightMountGeneralEffect(effect);
     }
 
     if(backend_ == Backend::LogitechHIDPP20) {

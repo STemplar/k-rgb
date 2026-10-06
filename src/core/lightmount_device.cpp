@@ -5,11 +5,13 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -174,8 +176,10 @@ std::uint16_t LightMountDevice::crc16Modbus(const std::uint8_t* data, std::size_
     return crc;
 }
 
-bool LightMountDevice::writePacket(Report& packet) {
+bool LightMountDevice::writePacket(Report& packet, bool waitForAck) {
+    lastError_.clear();
     if(fd_ < 0) {
+        lastError_ = "Light Mount vendor interface is not open";
         return false;
     }
 
@@ -185,7 +189,53 @@ bool LightMountDevice::writePacket(Report& packet) {
     packet[63] = static_cast<std::uint8_t>((crc >> 8) & 0xff);
 
     const ssize_t n = ::write(fd_, packet.data(), packet.size());
-    return n == static_cast<ssize_t>(packet.size());
+    if(n != static_cast<ssize_t>(packet.size())) {
+        lastError_ = n < 0 ? std::strerror(errno) : "Short Light Mount report write";
+        return false;
+    }
+    if(!waitForAck) return true;
+
+    // Light Mount captures show a 64-byte acknowledgement with length 0x06,
+    // the echoed sequence and command, and a CRC over bytes 0..61. Do not
+    // confuse queued Custom acknowledgements or unsolicited events with it.
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(1000);
+    while(std::chrono::steady_clock::now() < deadline) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        pollfd pfd{fd_, POLLIN, 0};
+        const int ready = ::poll(&pfd, 1, static_cast<int>(std::max<std::int64_t>(1, remaining)));
+        if(ready < 0 && errno == EINTR) continue;
+        if(ready < 0 || (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            lastError_ = "Light Mount acknowledgement read failed";
+            return false;
+        }
+        if(ready == 0) break;
+        if(!(pfd.revents & POLLIN)) continue;
+        Report response{};
+        const ssize_t count = ::read(fd_, response.data(), response.size());
+        if(count < 0 && errno == EINTR) continue;
+        if(count < 0) {
+            lastError_ = std::strerror(errno);
+            return false;
+        }
+        if(count != static_cast<ssize_t>(response.size()) ||
+           response[4] != packet[4] || response[5] != packet[5] ||
+           response[6] != packet[6]) continue;
+        const auto responseCrc = static_cast<std::uint16_t>(
+            response[62] | (static_cast<std::uint16_t>(response[63]) << 8));
+        if(responseCrc != crc16Modbus(response.data(), 62)) continue;
+        if(response[0] != 0x06 || response[1] != 0x00 ||
+           response[2] != packet[2] || response[3] != 0x00) {
+            lastError_ = "Unexpected Light Mount acknowledgement format";
+            return false;
+        }
+        return true;
+    }
+    char command[16];
+    std::snprintf(command, sizeof(command), "0x%02x/0x%02x", packet[5], packet[6]);
+    lastError_ = std::string("No Light Mount acknowledgement for ") + command;
+    return false;
 }
 
 bool LightMountDevice::setLightingMode(LightMountLightingMode mode) {
@@ -195,7 +245,7 @@ bool LightMountDevice::setLightingMode(LightMountLightingMode mode) {
     packet[5] = 0x10;
     packet[6] = 0x02;
     packet[7] = static_cast<std::uint8_t>(mode);
-    return writePacket(packet);
+    return writePacket(packet, mode == LightMountLightingMode::General);
 }
 
 bool LightMountDevice::setCustomMode() {
@@ -211,6 +261,7 @@ bool LightMountDevice::setCustomMode() {
 }
 
 bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
+    lastError_ = "Invalid Light Mount General effect parameters";
     if(effect.brightness < 10 || effect.brightness > 100 ||
        effect.speed < 10 || effect.speed > 100) {
         return false;
@@ -297,7 +348,7 @@ bool LightMountDevice::setGeneralEffect(const LightMountGeneralEffect& effect) {
     }
 
     packet[0] = static_cast<std::uint8_t>(end);
-    return writePacket(packet);
+    return writePacket(packet, true);
 }
 
 bool LightMountDevice::sendFiveLeds(const LightMountLedColor* leds) {

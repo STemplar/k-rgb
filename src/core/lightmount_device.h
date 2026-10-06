@@ -52,6 +52,7 @@ public:
     void close();
     bool isOpen() const { return fd_ >= 0; }
     const std::string& path() const { return path_; }
+    const std::string& lastError() const { return lastError_; }
 
     // Select the firmware lighting state used by IO Center.
     bool setLightingMode(LightMountLightingMode mode);
@@ -79,13 +80,14 @@ public:
 private:
     using Report = std::array<std::uint8_t, kReportLen>;
 
-    bool writePacket(Report& packet);
+    bool writePacket(Report& packet, bool waitForAck = false);
     bool sendFiveLeds(const LightMountLedColor* leds);
     static std::uint16_t crc16Modbus(const std::uint8_t* data, std::size_t len);
 
     int fd_ = -1;
     std::string path_;
     std::uint8_t sequence_ = 1;
+    std::string lastError_;
 };
 
 } // namespace krgb

@@ -2221,12 +2221,12 @@ int runLightMount(const std::vector<std::string>& a) {
             return 1;
         }
         if(!dev.setLightingMode(LightMountLightingMode::General)) {
-            std::fprintf(stderr, "error: failed to select Light Mount General mode\n");
+            std::fprintf(stderr, "error: %s\n", dev.lastError().c_str());
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         if(!dev.setGeneralEffect(effect)) {
-            std::fprintf(stderr, "error: invalid or failed Light Mount General effect write\n");
+            std::fprintf(stderr, "error: %s\n", dev.lastError().c_str());
             return 1;
         }
 

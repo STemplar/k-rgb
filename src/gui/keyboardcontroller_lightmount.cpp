@@ -1,4 +1,8 @@
 #include "keyboardcontroller.h"
+#include "core/hid_lamp_array_device.h"
+
+#include <chrono>
+#include <thread>
 
 #include <KLocalizedString>
 
@@ -13,9 +17,27 @@ bool KeyboardController::applyLightMountGeneralEffect(
         return false;
     }
 
-    if(!lightMountDevice_.setLightingMode(krgb::LightMountLightingMode::General) ||
-       !lightMountDevice_.setGeneralEffect(effect)) {
-        Q_EMIT error(i18n("Failed to set Light Mount General effect."));
+    // Match the CLI native-effect path: release LampArray host control before
+    // selecting a firmware effect on the separate vendor interface.
+    krgb::HIDLampArrayDevice lamp;
+    std::string err;
+    if(!lamp.open(krgb::LightMountDevice::kVendorId,
+                  krgb::LightMountDevice::kProductId, 3, &err)) {
+        Q_EMIT error(QString::fromStdString(err));
+        return false;
+    }
+    if(!lamp.setAutonomousMode(true)) {
+        Q_EMIT error(i18n("Failed to enable Light Mount autonomous lighting."));
+        return false;
+    }
+    if(!lightMountDevice_.setLightingMode(krgb::LightMountLightingMode::General)) {
+        Q_EMIT error(QString::fromStdString(lightMountDevice_.lastError()));
+        return false;
+    }
+    // Preserve the settling interval already used by the CLI.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if(!lightMountDevice_.setGeneralEffect(effect)) {
+        Q_EMIT error(QString::fromStdString(lightMountDevice_.lastError()));
         return false;
     }
     return true;
