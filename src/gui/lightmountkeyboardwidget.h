@@ -29,7 +29,6 @@ private:
     bool isRainbowMode() const;
     int selectedEffectCode() const;
     void setDirectionRows(bool cardinal, bool rotational);
-    void setSliderText(QLabel* label, int value);
 
     KeyboardController* controller_ = nullptr;
     QComboBox* modeCombo_ = nullptr;

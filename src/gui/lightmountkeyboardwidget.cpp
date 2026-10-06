@@ -23,6 +23,10 @@ namespace {
 constexpr int kPerKeyMode = -1;
 constexpr int kStaticRainbowMode = -2;
 
+int percentToSliderStep(int percent) {
+    return (qBound(10, percent, 100) + 5) / 10;
+}
+
 int effectCode(krgb::LightMountEffect effect) {
     return krgb::makeProtocolEffectCode(
         krgb::EffectProtocol::BeQuietMount,
@@ -102,13 +106,15 @@ LightMountKeyboardWidget::LightMountKeyboardWidget(
     auto* speedLayout = new QHBoxLayout(speedRow);
     speedLayout->setContentsMargins(0, 0, 0, 0);
     speedSlider_ = new QSlider(Qt::Horizontal, speedRow);
-    speedSlider_->setRange(10, 100);
-    speedSlider_->setSingleStep(10);
-    speedSlider_->setPageStep(10);
-    speedSlider_->setTickInterval(10);
+    // Ten positions also constrain mouse dragging; singleStep alone only
+    // changes keyboard/wheel increments and permits intermediate percentages.
+    speedSlider_->setRange(1, 10);
+    speedSlider_->setSingleStep(1);
+    speedSlider_->setPageStep(1);
+    speedSlider_->setTickInterval(1);
     speedSlider_->setTickPosition(QSlider::TicksBelow);
-    speedSlider_->setValue(50);
-    speedValue_ = new QLabel(QStringLiteral("50"), speedRow);
+    speedSlider_->setValue(5);
+    speedValue_ = new QLabel(QStringLiteral("50%"), speedRow);
     speedValue_->setMinimumWidth(32);
     speedLayout->addWidget(speedSlider_, 1);
     speedLayout->addWidget(speedValue_);
@@ -118,12 +124,12 @@ LightMountKeyboardWidget::LightMountKeyboardWidget(
     auto* brightnessLayout = new QHBoxLayout(brightnessRow);
     brightnessLayout->setContentsMargins(0, 0, 0, 0);
     brightnessSlider_ = new QSlider(Qt::Horizontal, brightnessRow);
-    brightnessSlider_->setRange(10, 100);
-    brightnessSlider_->setSingleStep(10);
-    brightnessSlider_->setPageStep(10);
-    brightnessSlider_->setTickInterval(10);
+    brightnessSlider_->setRange(1, 10);
+    brightnessSlider_->setSingleStep(1);
+    brightnessSlider_->setPageStep(1);
+    brightnessSlider_->setTickInterval(1);
     brightnessSlider_->setTickPosition(QSlider::TicksBelow);
-    brightnessSlider_->setValue(40);
+    brightnessSlider_->setValue(4);
     brightnessValue_ = new QLabel(QStringLiteral("40%"), brightnessRow);
     brightnessValue_->setMinimumWidth(40);
     brightnessLayout->addWidget(brightnessSlider_, 1);
@@ -166,11 +172,17 @@ LightMountKeyboardWidget::LightMountKeyboardWidget(
     connect(colorModeCombo_, &QComboBox::currentIndexChanged,
             this, &LightMountKeyboardWidget::updateControls);
     connect(speedSlider_, &QSlider::valueChanged, this, [this](int value) {
-        setSliderText(speedValue_, value);
+        speedValue_->setText(QStringLiteral("%1%").arg(value * 10));
+        if(!loading_ && !speedSlider_->isSliderDown()) applyAndSave();
     });
     connect(brightnessSlider_, &QSlider::valueChanged, this, [this](int value) {
-        brightnessValue_->setText(QStringLiteral("%1%").arg(value));
+        brightnessValue_->setText(QStringLiteral("%1%").arg(value * 10));
+        if(!loading_ && !brightnessSlider_->isSliderDown()) applyAndSave();
     });
+    connect(speedSlider_, &QSlider::sliderReleased,
+            this, &LightMountKeyboardWidget::applyAndSave);
+    connect(brightnessSlider_, &QSlider::sliderReleased,
+            this, &LightMountKeyboardWidget::applyAndSave);
     connect(applyButton_, &QPushButton::clicked,
             this, &LightMountKeyboardWidget::applyAndSave);
     connect(offButton, &QPushButton::clicked,
@@ -209,10 +221,6 @@ bool LightMountKeyboardWidget::isRainbowMode() const {
 int LightMountKeyboardWidget::selectedEffectCode() const {
     const int code = modeCombo_->currentData().toInt();
     return isLightMountEffectCode(code) ? code : 0;
-}
-
-void LightMountKeyboardWidget::setSliderText(QLabel* label, int value) {
-    label->setText(QString::number(value));
 }
 
 void LightMountKeyboardWidget::setDirectionRows(bool cardinal, bool rotational) {
@@ -335,7 +343,7 @@ void LightMountKeyboardWidget::loadCurrentProfile() {
     if(speed < 10 || speed > 100) {
         speed = 50;
     }
-    speedSlider_->setValue(speed);
+    speedSlider_->setValue(percentToSliderStep(speed));
 
     int direction = s.direction;
     if(direction < static_cast<int>(krgb::LightMountDirection::Up) ||
@@ -347,19 +355,19 @@ void LightMountKeyboardWidget::loadCurrentProfile() {
         directionCombo_->setCurrentIndex(directionIndex);
     }
 
-    brightnessSlider_->setValue(qBound(10, s.brightness, 100));
+    brightnessSlider_->setValue(percentToSliderStep(s.brightness));
     keyboard_->setKeyColors(s.keyColors);
     loading_ = false;
     updateControls();
 }
 
 void LightMountKeyboardWidget::applyAndSave() {
-    if(!controller_->usesBeQuietLightMount()) {
+    if(loading_ || !controller_->usesBeQuietLightMount()) {
         return;
     }
 
     LightingSettings s = LightingSettings::load(Profiles::current());
-    s.brightness = brightnessSlider_->value();
+    s.brightness = brightnessSlider_->value() * 10;
     s.color = primaryColor_->color();
     s.secondaryColor = secondaryColor_->color();
 
@@ -372,7 +380,7 @@ void LightMountKeyboardWidget::applyAndSave() {
         s.kind = LightingSettings::Effect;
         s.effectMode = selectedEffectCode();
         s.effectColorMode = colorModeCombo_->currentData().toInt();
-        s.speed = speedSlider_->value();
+        s.speed = speedSlider_->value() * 10;
         s.direction = directionCombo_->currentData().toInt();
         s.effectPeriodMs = 0;
     }
