@@ -1,8 +1,9 @@
 // be quiet! Light Mount US-ANSI visual layout for the GUI per-key editor.
 //
 // Chassis: manufacturer dimensions, 461 x 132 mm without the palmrest.
-// Keys use a standard 19.05 mm unit; block positions follow the supplied ANSI
-// reference and remain estimates. The user supplied a 21 mm media wheel diameter.
+// Keys use the conventional full-size US-ANSI grid with a 19.05 mm unit.
+// Placement of that grid within the chassis and the extra controls follows the
+// reference image. The user supplied a 21 mm media wheel diameter.
 // Lighting addresses and legends come from the validated vendor
 // LED/key map. The top light bar and both side strips are represented as
 // individually selectable RGB elements as well.
@@ -34,6 +35,11 @@ inline constexpr float kLayoutHeight = 132.0f; // mm, front to back
 inline constexpr float kChassisHeightMm = 44.0f; // vertical; not part of the 2D layout
 inline constexpr float kKeyUnitMm = 19.05f;
 inline constexpr float kMediaWheelDiameterMm = 21.0f;
+inline constexpr float kMainBlockXmm = 29.0f;
+inline constexpr float kFunctionRowYmm = 7.0f;
+inline constexpr float kNavigationOffsetU = 15.25f;
+inline constexpr float kNumpadOffsetU = 18.5f;
+inline constexpr float kTypingRowOffsetU = 1.5f;
 inline constexpr std::size_t kExpectedPhysicalKeyCount = 110; // 109 keys + 3D Media Wheel
 inline constexpr std::size_t kExpectedAccentCount = 55;      // 45 top + 5 left + 5 right
 inline constexpr std::size_t kExpectedElementCount =
@@ -240,12 +246,13 @@ inline const std::vector<VisualKey>& keys() {
 
         // Keep drawing and flag presets in one physical coordinate system.
         // Fit standard key units within the chassis, preserving ANSI widths.
-        // Block origins and the function-row gap are image-derived estimates.
+        // Conventional full-size layout: a quarter-unit gap on either side
+        // of the navigation block and a half-unit gap below the function row.
         for(auto& key : out) {
             const std::string_view name(key.name);
             if(key.round) {
                 key.x = 14.5f - kMediaWheelDiameterMm / 2.0f;
-                key.y = 20.5f - kMediaWheelDiameterMm / 2.0f;
+                key.y = kFunctionRowYmm;
                 key.w = key.h = kMediaWheelDiameterMm;
                 continue;
             }
@@ -254,14 +261,16 @@ inline const std::vector<VisualKey>& keys() {
                 if(key.x < 1.55f + xShift) {
                     key.x = 4.0f;
                 } else if(key.x >= 20.20f + xShift) {
-                    key.x = 382.0f + (key.x - (20.20f + xShift)) * kKeyUnitMm;
+                    key.x = kMainBlockXmm +
+                        (kNumpadOffsetU + key.x - (20.20f + xShift)) * kKeyUnitMm;
                 } else if(key.x >= 16.90f + xShift) {
-                    key.x = 320.5f + (key.x - (16.90f + xShift)) * kKeyUnitMm;
+                    key.x = kMainBlockXmm +
+                        (kNavigationOffsetU + key.x - (16.90f + xShift)) * kKeyUnitMm;
                 } else {
-                    key.x = 29.0f + (key.x - (1.55f + xShift)) * kKeyUnitMm;
+                    key.x = kMainBlockXmm + (key.x - (1.55f + xShift)) * kKeyUnitMm;
                 }
-                key.y = key.y < y1 ? 10.0f :
-                    32.0f + (key.y - y1) / 1.10f * kKeyUnitMm;
+                key.y = key.y < y1 ? kFunctionRowYmm : kFunctionRowYmm +
+                    (kTypingRowOffsetU + (key.y - y1) / 1.10f) * kKeyUnitMm;
                 key.w *= kKeyUnitMm;
                 key.h = (key.h > 1.0f ? 2.0f : 1.0f) * kKeyUnitMm;
                 continue;
@@ -270,6 +279,12 @@ inline const std::vector<VisualKey>& keys() {
             key.w *= kLayoutWidth / sourceWidth;
             key.y *= kLayoutHeight / sourceHeight;
             key.h *= kLayoutHeight / sourceHeight;
+            if(name.substr(0, 11) == "LEFT_STRIP_" || name.substr(0, 12) == "RIGHT_STRIP_") {
+                key.y = kFunctionRowYmm + (kTypingRowOffsetU + 1.0f) * kKeyUnitMm +
+                    (key.y - sideTop * kLayoutHeight / sourceHeight) /
+                    (sideHeight * kLayoutHeight / sourceHeight) * 3.0f * kKeyUnitMm;
+                key.h = 3.0f * kKeyUnitMm / 5.0f;
+            }
         }
         return out;
     }();
