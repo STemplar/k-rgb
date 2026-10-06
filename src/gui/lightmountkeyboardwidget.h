@@ -31,6 +31,7 @@ private:
     bool isRainbowMode() const;
     int selectedEffectCode() const;
     void setDirectionRows(bool cardinal, bool rotational);
+    void applyFlagPreset(bool ukrainian);
 
     KeyboardController* controller_ = nullptr;
     QComboBox* modeCombo_ = nullptr;
@@ -45,6 +46,7 @@ private:
     QPushButton* applyButton_ = nullptr;
     KeyboardWidget* keyboard_ = nullptr;
     QLabel* selectionLabel_ = nullptr;
+    QWidget* presetPanel_ = nullptr;
     bool loading_ = false;
     QHash<int, int> effectDirections_;
     int activeEffectCode_ = 0;

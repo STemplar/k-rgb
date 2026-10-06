@@ -5,6 +5,7 @@
 #include "settings.h"
 #include "core/effect_code.h"
 #include "core/lightmount_effects.h"
+#include "core/lightmount_ansi_visual.h"
 
 #include <QComboBox>
 #include <QFormLayout>
@@ -170,6 +171,19 @@ LightMountKeyboardWidget::LightMountKeyboardWidget(
     selectionRow->addWidget(fillAll);
     root->addLayout(selectionRow);
 
+    presetPanel_ = new QWidget(this);
+    auto* presets = new QHBoxLayout(presetPanel_);
+    presets->setContentsMargins(0, 0, 0, 0);
+    presets->addWidget(new QLabel(i18n("Presets:"), presetPanel_));
+    auto* usaFlag = new QPushButton(i18n("USA Flag"), presetPanel_);
+    auto* ukraineFlag = new QPushButton(i18n("Ukraine Flag"), presetPanel_);
+    presets->addWidget(usaFlag);
+    presets->addWidget(ukraineFlag);
+    presets->addStretch();
+    root->addWidget(presetPanel_);
+    connect(usaFlag, &QPushButton::clicked, this, [this] { applyFlagPreset(false); });
+    connect(ukraineFlag, &QPushButton::clicked, this, [this] { applyFlagPreset(true); });
+
     auto* actionRow = new QHBoxLayout();
     auto* offButton = new QPushButton(
         QIcon::fromTheme(QStringLiteral("system-shutdown")), i18n("Turn Off"), this);
@@ -313,6 +327,7 @@ void LightMountKeyboardWidget::updateControls() {
     setDirectionRows(cardinal, rotational);
 
     keyboard_->setVisible(perKey);
+    presetPanel_->setVisible(perKey);
     selectionLabel_->setVisible(perKey);
     for(auto* button : findChildren<QPushButton*>()) {
         const QString text = button->text();
@@ -332,6 +347,31 @@ void LightMountKeyboardWidget::updateControls() {
 
 void LightMountKeyboardWidget::paintSelection() {
     keyboard_->paintSelection(primaryColor_->color());
+}
+
+void LightMountKeyboardWidget::applyFlagPreset(bool ukrainian) {
+    if(!isPerKeyMode()) return;
+    QHash<QString, QColor> colors;
+    using namespace krgb::lightmount::ansi_visual;
+    // Match the existing presets using Light Mount physical coordinates,
+    // including the media wheel and individually addressable accent LEDs.
+    for(const auto& key : keys()) {
+        const float cx = key.x + key.w / 2.0f;
+        const float cy = key.y + key.h / 2.0f;
+        QColor color;
+        if(ukrainian) {
+            color = cy < kLayoutHeight / 2.0f
+                ? QColor(0, 87, 183) : QColor(255, 215, 0);
+        } else if(cx < kLayoutWidth / 3.0f) {
+            color = QColor(28, 28, 75);
+        } else {
+            const int stripe = static_cast<int>(cy / (kLayoutHeight / 8.0f));
+            color = stripe % 2 == 0 ? QColor(140, 22, 36) : QColor(255, 255, 255);
+        }
+        colors.insert(QString::fromLatin1(key.name), color);
+    }
+    keyboard_->setKeyColors(colors);
+    applyAndSave();
 }
 
 void LightMountKeyboardWidget::loadCurrentProfile() {
