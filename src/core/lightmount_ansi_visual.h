@@ -33,6 +33,7 @@ struct VisualKey {
 inline constexpr float kLayoutWidth = 461.0f; // mm, left to right
 inline constexpr float kLayoutHeight = 132.0f; // mm, front to back
 inline constexpr float kSideStripWidthMm = 6.0f;
+inline constexpr float kSideStripLengthMm = 65.0f;
 inline constexpr float kSideStripDisplayGapMm = 3.0f;
 inline constexpr float kSideDisplayMarginMm = kSideStripWidthMm + kSideStripDisplayGapMm;
 inline constexpr float kVisualWidth = kLayoutWidth + 2.0f * kSideDisplayMarginMm;
@@ -211,7 +212,7 @@ inline const std::vector<VisualKey>& keys() {
 
         // Side strips: five individually addressable LEDs on each side,
         // centred alongside the home row. Source coordinates preserve the
-        // segment order; the final display uses rotated topbar-sized segments.
+        // segment order; the user supplied a total length of 65 mm per strip.
         constexpr float sideTop = y2;
         constexpr float sideHeight = (y4 + 1.0f) - y2;
         constexpr float sideSegmentH = sideHeight / 5.0f;
@@ -292,8 +293,8 @@ inline const std::vector<VisualKey>& keys() {
                 key.x = name.substr(0, 11) == "LEFT_STRIP_" ? -kSideDisplayMarginMm :
                     kLayoutWidth + kSideStripDisplayGapMm;
                 key.w = kSideStripWidthMm;
-                constexpr float sideDisplaySegmentH = kLayoutWidth / static_cast<float>(kTopBarCount);
-                constexpr float sideDisplayHeight = 5.0f * sideDisplaySegmentH;
+                constexpr float sideDisplayHeight = kSideStripLengthMm;
+                constexpr float sideDisplaySegmentH = sideDisplayHeight / 5.0f;
                 key.y = kFunctionRowYmm + (kTypingRowOffsetU + 2.5f) * kKeyUnitMm -
                     sideDisplayHeight / 2.0f +
                     (key.y - sideTop * kLayoutHeight / sourceHeight) /
