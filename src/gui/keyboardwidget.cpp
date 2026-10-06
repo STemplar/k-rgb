@@ -585,13 +585,13 @@ void KeyboardWidget::paintEvent(QPaintEvent*) {
             const QFont font = beQuietLegendFont(painter.font(), r.cell, r.label);
             painter.setFont(font);
             if(r.name == QStringLiteral("NUMPLUS") || r.name == QStringLiteral("NUMENTER")) {
-                // Hardware validation places these legends near the bottom
-                // of their first row (rows 2 and 4 respectively). Align the
-                // visible ink bottom within the upper half of the tall keycap.
-                const QRectF ink = QFontMetricsF(font).tightBoundingRect(r.label);
-                painter.drawText(QPointF(r.cell.center().x() - ink.center().x(),
-                                         r.cell.top() + r.cell.height() * 0.50 -
-                                             keySize * 0.10 - ink.bottom()),
+                // Mirror the ordinary keys' top-centred text layout onto the
+                // bottom of the first row, using the same font box and margin.
+                QRectF firstRow = r.cell;
+                firstRow.setHeight(keySize);
+                QRectF legend = beQuietLegendRect(firstRow);
+                legend.moveBottom(firstRow.bottom() - keySize * 0.10);
+                painter.drawText(legend, Qt::AlignHCenter | Qt::AlignBottom,
                                  r.label);
                 continue;
             }
