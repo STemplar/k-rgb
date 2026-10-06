@@ -1,15 +1,17 @@
 # k-rgb
 
 A native **KDE / Qt 6** application (plus a CLI and a Python reference tool) for
-controlling the per-key RGB lighting of the **Alienware AW410K** mechanical
-keyboard on Linux — no vendor software, no root daemon, no cloud.
+controlling keyboard lighting on Linux, including **Alienware AW410K**,
+**be quiet! Light Mount**, and selected **Logitech** keyboards — no vendor
+software, no root daemon, no cloud. Support varies by device; see the table below.
 
 It talks directly to the keyboard's vendor HID interface over `hidraw`, so it's
 small, fast, and dependency-light.
 
-> Status: fully working — solid colours, a visual per-key editor, named
-> profiles, per-key static rainbow, all the hardware effects, brightness, a
-> system-tray quick-switcher, and restore-on-login.
+> Features include solid colours, a visual per-key editor, named profiles,
+> static rainbow, native effects, brightness, a system-tray quick-switcher,
+> and restore-on-login. Hardware verification and available effects are listed
+> per device below.
 
 ## Features
 
@@ -19,13 +21,15 @@ small, fast, and dependency-light.
   one-click **USA** and **Ukraine** flag presets
 - **Named profiles** — save any number of lighting setups and switch between
   them from the window or the tray; the active one is restored at login
-- **Auto-detects** your keyboard (Alienware **AW410K** / **AW510K**) and names
-  it; the per-key editor adapts to the detected model's layout
-- **Per-key static rainbow** (all 107 keys individually addressed)
-- **Hardware effects** that run on the keyboard itself: Breathing,
+- **Auto-detects** your keyboard and presents controls for its lighting protocol;
+  the per-key editor adapts to the supported model's layout
+- **Per-key static rainbow** (all 107 keys individually addressed on AW410K)
+- **Alienware hardware effects** that run on the keyboard itself: Breathing,
   Pulse, Spectrum, Single Wave, Rainbow Wave, Scanner
+- **Light Mount hardware effects**: Static, Color Wave, Tornado, Breathing,
+  Reactive, and Matrix; plus Per-key Custom and a static Rainbow mode
 - **Speed** and **direction** controls (per effect)
-- **Brightness** (software intensity scaling) with live preview
+- **Brightness** controls with live preview
 - **System-tray icon** (`KStatusNotifierItem`) with quick controls — profile
   switcher, Off, Rainbow, Spectrum, colour presets, show/hide, quit
 - **Remembers your setup** and can **restore it at login**
@@ -37,6 +41,7 @@ small, fast, and dependency-light.
 | --- | --- | --- | --- |
 | Alienware AW410K RGB Mechanical Keyboard | `04f2:1968` | 2 (vendor HID, `0xFF00`) | full GUI/per-key |
 | Alienware AW510K Low-Profile RGB Keyboard | `04f2:1830` | 2 (vendor HID, `0xFF00`) | full GUI/per-key* |
+| be quiet! Light Mount (US ANSI) | `373f:0002` | 2 (vendor HID); 3 (HID LampArray control) | **hardware-verified**: all six native effects, GUI/per-key, static rainbow; [details](#be-quiet-light-mount) |
 | Logitech G213 Prodigy | `046d:c336` | HID++ endpoint discovered at runtime | **capture-derived**: 5-zone RGB / `0x8070`; hardware-unverified |
 | Logitech G410 Atlas Spectrum | `046d:c330` | HID++ endpoint discovered at runtime | **resource-derived** per-key metadata; hardware-unverified |
 | Logitech G413 Carbon | `046d:c33a` | HID++ endpoint discovered at runtime | **capture-derived** brightness/breathing behavior; write path not implemented |
@@ -50,9 +55,10 @@ small, fast, and dependency-light.
 | Logitech G PRO | `046d:c339` | HID++ endpoint discovered at runtime | resource/reference-derived per-key protocol; ANSI87/ISO88 TKL form visually confirmed; hardware-unverified |
 
 k-rgb **auto-detects** which model is plugged in and names it in the window and
-`krgb-cli info`. Both share the same lighting protocol and LED index map (the
+`krgb-cli info`. The two Alienware models share the same lighting protocol and
+LED index map (the
 AW510K simply lacks the discrete volume keys), so all effects and the per-key
-editor work on either. New models are added as a one-line entry in the
+editor work on either. Additional Alienware models are added as a one-line entry in the
 `kModels` table in `src/core/keymap.h` — see [Adding a keyboard](#adding-a-keyboard).
 
 \* The AW510K mapping is derived from the [OpenRGB](https://openrgb.org/)
@@ -138,6 +144,47 @@ k-rgb. G815 has captures for effects, all-key/per-key writes, multimedia, G-keys
 and logo; G910 Spark has captures for keyboard colour, logo and G/M-key traffic.
 Those captures raise their protocol evidence status, but do not by themselves
 make the corresponding k-rgb write paths hardware-verified or implemented.
+
+### be quiet! Light Mount
+
+The Light Mount has its own GUI page and lighting backend. Static, Color Wave,
+Tornado, Breathing, Reactive, and Matrix have all been confirmed working on
+physical Light Mount hardware through user testing. Per-key Custom and the
+static Rainbow mode have also been tested.
+
+- **Mode-specific controls:** colour and speed controls are enabled where the
+  selected native effect supports them. Color Wave offers single colour, dual
+  colour, and gradient/rainbow choices. Reactive exposes two colours.
+- **Direction:** Color Wave and Matrix offer Up, Down, Left, and Right; Tornado
+  offers Clockwise and Counter-clockwise. Direction is remembered separately
+  for each effect within a profile.
+- **Speed and brightness:** sliders select 10% steps from 10% to 100% and apply
+  and save the chosen value. Colour, colour mode, and speed currently share the
+  profile's settings across modes; only direction is stored separately per effect.
+- **Per-key editor:** the US-ANSI layout includes 109 keys, the 3D Media Wheel,
+  45 topbar LEDs, and five LEDs on each side strip: 165 selectable lighting
+  elements. USA Flag and Ukraine Flag presets are available on this page.
+- **Physical presentation:** the editor shows the chassis outline, the be quiet!
+  logo, and the media wheel. The underside light strips are displayed outside
+  the outline for selection. Geometry uses the confirmed chassis/control sizes
+  and product images; it is not a manufacturer CAD model.
+
+Native effects use vendor HID interface 2. The GUI releases HID LampArray host
+control through interface 3 before applying a native effect. The included udev
+rule covers `373f:0002`; follow the permissions instructions below to access the
+device without root.
+
+The CLI also exposes Light Mount commands, for example:
+
+```bash
+krgb-cli lightmount info
+krgb-cli lightmount general static 255 80 0 40
+krgb-cli lightmount general breathing 40 50
+```
+
+The numbers in these examples are RGB values followed by brightness for Static,
+and brightness followed by speed for Breathing. Run `krgb-cli --help` for the
+remaining Light Mount commands and parameters.
 
 ### Case / chassis lighting (experimental)
 
