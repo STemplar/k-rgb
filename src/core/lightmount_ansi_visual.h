@@ -35,6 +35,7 @@ inline constexpr float kLayoutHeight = 132.0f; // mm, front to back
 inline constexpr float kChassisHeightMm = 44.0f; // vertical; not part of the 2D layout
 inline constexpr float kKeyUnitMm = 19.05f;
 inline constexpr float kMediaWheelDiameterMm = 21.0f;
+inline constexpr float kMacroColumnXmm = 4.0f;
 inline constexpr float kMainBlockXmm = 29.0f;
 inline constexpr float kFunctionRowYmm = 7.0f;
 inline constexpr float kNavigationOffsetU = 15.25f;
@@ -251,15 +252,17 @@ inline const std::vector<VisualKey>& keys() {
         for(auto& key : out) {
             const std::string_view name(key.name);
             if(key.round) {
-                key.x = 14.5f - kMediaWheelDiameterMm / 2.0f;
-                key.y = kFunctionRowYmm;
+                // Wheel centre is the intersection of the macro-column and
+                // function-row centre lines, as confirmed on the hardware.
+                key.x = kMacroColumnXmm + (kKeyUnitMm - kMediaWheelDiameterMm) / 2.0f;
+                key.y = kFunctionRowYmm + (kKeyUnitMm - kMediaWheelDiameterMm) / 2.0f;
                 key.w = key.h = kMediaWheelDiameterMm;
                 continue;
             }
             if(name.substr(0, 7) != "TOPBAR_" && name.substr(0, 11) != "LEFT_STRIP_" &&
                name.substr(0, 12) != "RIGHT_STRIP_") {
                 if(key.x < 1.55f + xShift) {
-                    key.x = 4.0f;
+                    key.x = kMacroColumnXmm;
                 } else if(key.x >= 20.20f + xShift) {
                     key.x = kMainBlockXmm +
                         (kNumpadOffsetU + key.x - (20.20f + xShift)) * kKeyUnitMm;
